@@ -322,6 +322,15 @@ export const buildWaitingMatches = (
         const joinedB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
         return joinedA - joinedB || a.rating - b.rating;
     });
+    const initialPlayersByFormat = new Map<PlayFormat, SessionPlayer[]>();
+    for (const court of freeCourts) {
+        const format = session.courtFormats[court - 1] ?? (session.isDoubles ? 'doubles' : 'singles');
+        if (!initialPlayersByFormat.has(format)) {
+            initialPlayersByFormat.set(format, sortedPlayers.filter((player) =>
+                !session.courtFormats.length || player.preferredFormat === format
+            ));
+        }
+    }
     const newMatches = [];
     const hasCourtPreferences = session.courtFormats.length > 0;
     const recentPairs = getRecentPlayerPairs(session);
@@ -330,6 +339,15 @@ export const buildWaitingMatches = (
         const format: PlayFormat = session.courtFormats[court - 1] ?? (session.isDoubles ? 'doubles' : 'singles');
         const isDoubles = format === 'doubles';
         const neededPlayers = isDoubles ? 4 : 2;
+        const sameFormatCourts = freeCourts.filter((freeCourt) =>
+            (session.courtFormats[freeCourt - 1] ?? (session.isDoubles ? 'doubles' : 'singles')) === format
+        );
+        const courtOrder = sameFormatCourts.indexOf(court);
+        const initialEligiblePlayers = initialPlayersByFormat.get(format) ?? [];
+        const preferredPlayers = initialEligiblePlayers.filter((_, index) =>
+            index % sameFormatCourts.length === courtOrder
+        );
+        const preferredSet = new Set(preferredPlayers);
         const canWaitForAnotherMatch = proposed && session.matches.some((match) =>
             match.status === 'ongoing' &&
             [match.player1, match.player2, match.player3, match.player4].some((username) => {
@@ -341,8 +359,13 @@ export const buildWaitingMatches = (
         const getEligiblePlayers = () => sortedPlayers.filter((player) =>
             !hasCourtPreferences || player.preferredFormat === format
         );
+        const eligiblePlayers = getEligiblePlayers();
+        const balancedEligiblePlayers = [
+            ...preferredPlayers.filter((player) => eligiblePlayers.includes(player)),
+            ...eligiblePlayers.filter((player) => !preferredSet.has(player))
+        ];
         const chosen = choosePlayersForMatch(
-            getEligiblePlayers(),
+            balancedEligiblePlayers,
             neededPlayers,
             proposed ? recentPairs : new Set(),
             isDoubles,

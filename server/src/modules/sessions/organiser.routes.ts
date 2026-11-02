@@ -478,8 +478,10 @@ router.post('/sessions/:id/players', async (req, res) => {
             vol: user?.vol ?? 0.06,
             joinedAt: new Date()
         });
-        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
-        if (newMatches.length) session.matches.push(...newMatches);
+        if (!session.matches.some((match) => match.status === 'ongoing')) {
+            const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+            if (newMatches.length) session.matches.push(...newMatches);
+        }
         session.isActive = true;
         await session.save();
         res.status(201).json(session);
@@ -655,10 +657,13 @@ router.post('/sessions/:id/matches/:matchId/finish', async (req, res) => {
             if (names.includes(player.username)) player.joinedAt = now;
         });
         session.matches = session.matches.filter((item) =>
-            item.status !== 'proposed' || !item.awaitingNextFinish || item.manualOverride
+            item.status !== 'proposed' || item.manualOverride
         );
-        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
-        if (newMatches.length) session.matches.push(...newMatches);
+        const anotherMatchIsOngoing = session.matches.some((item) => item.status === 'ongoing');
+        if (!anotherMatchIsOngoing) {
+            const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+            if (newMatches.length) session.matches.push(...newMatches);
+        }
         session.isActive = true;
         await session.save();
         res.json(session);

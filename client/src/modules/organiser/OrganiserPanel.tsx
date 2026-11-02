@@ -896,6 +896,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const courts = selectedSession?.courtFormats?.length
         ? selectedSession.courtFormats
         : Array.from({ length: selectedSession?.numCourts ?? 0 }, () => selectedSession?.isDoubles ? 'doubles' : 'singles');
+    const waitingForOtherMatch = Boolean(
+        selectedSession?.matches.some((match) => match.status === 'ongoing') &&
+        proposedMatches.length === 0 &&
+        courts.some((_, index) => !courtMatches.some((match) => match.court === index + 1))
+    );
 
     if (loading) {
         return <main className="organiser-shell"><p className="organiser-muted">Loading organiser workspace…</p></main>;
@@ -1339,8 +1344,17 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             );
                         })}
                     </div>
+                    {waitingForOtherMatch && (
+                        <div className="organiser-waiting-for-match" role="status">
+                            <span className="organiser-waiting-indicator" aria-hidden="true" />
+                            <div>
+                                <strong>Waiting for the other match to finish</strong>
+                                <p>We’ll build the next lineup from all available players once the live matches are done.</p>
+                            </div>
+                        </div>
+                    )}
                     {proposedMatches.length > 0 && <p className="organiser-help">Approve each proposed match when its players and court are ready.</p>}
-                    {!courtMatches.length && <p className="organiser-muted">No match is currently proposed. Add waiting players who match a court preference to generate the next proposal.</p>}
+                    {!courtMatches.length && !waitingForOtherMatch && <p className="organiser-muted">No match is currently proposed. Add waiting players who match a court preference to generate the next proposal.</p>}
                     <section className="organiser-subcard">
                         <h3>Waiting queue · {waitingPlayers.length}</h3>
                         {waitingPlayers.length ? (

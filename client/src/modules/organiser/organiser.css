@@ -563,6 +563,44 @@
     margin-left: auto;
 }
 
+.organiser-waiting-for-match {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px solid rgba(98, 215, 223, 0.22);
+    border-radius: 8px;
+    color: #d9e8ea;
+    background: rgba(25, 55, 62, 0.28);
+}
+
+.organiser-waiting-for-match strong {
+    color: #8edbe2;
+}
+
+.organiser-waiting-for-match p {
+    margin: 4px 0 0;
+    color: #a9bdc1;
+    font-size: 0.88rem;
+}
+
+.organiser-waiting-indicator {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: #62d7df;
+    animation: organiser-waiting-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes organiser-waiting-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
 .organiser-queue-timer {
     flex: none;
     padding: 5px 8px;
@@ -589,7 +627,8 @@
 
 @media (prefers-reduced-motion: reduce) {
     .organiser-live-dot,
-    .organiser-match-live-dot {
+    .organiser-match-live-dot,
+    .organiser-waiting-indicator {
         animation: none;
     }
 }
