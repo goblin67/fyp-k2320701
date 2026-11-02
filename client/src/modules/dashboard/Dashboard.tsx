@@ -2,8 +2,15 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 import OrganiserPanel from '../organiser/OrganiserPanel';
-
-type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history' | 'achievements';
+import type { DashboardView } from './dashboard.types';
+import ActiveMatchPage from './pages/ActiveMatchPage';
+import AchievementsPage from './pages/AchievementsPage';
+import LeaderboardPage from './pages/LeaderboardPage';
+import MatchHistoryPage from './pages/MatchHistoryPage';
+import OverviewPage from './pages/OverviewPage';
+import SessionHistoryPage from './pages/SessionHistoryPage';
+import SessionSummaryPage from './pages/SessionSummaryPage';
+import SettingsPage from './pages/SettingsPage';
 
 interface UserProfileResponse {
     username: string;
@@ -798,497 +805,82 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 </section>
 
                 {view === 'overview' && (
-                    <section>
-                        <h3>Performance Overview</h3>
-                        <p style={{ color: '#aaa', marginBottom: '18px' }}>Track your match results, recent form, and progress without losing sight of your play style.</p>
-                        <div className="overview-grid">
-                            <div className="profile-card">
-                                <h4>Your Profile</h4>
-                                <div className="profile-line"><span>Games Played</span><strong>{totalGames}</strong></div>
-                                <div className="profile-line"><span>Wins</span><strong>{totalWins}</strong></div>
-                                <div className="profile-line"><span>Win Rate</span><strong>{winRate}%</strong></div>
-                                <div className="profile-line"><span>Current Streak</span><strong>{streakLabel}</strong></div>
-                            </div>
-                            <div className="profile-card">
-                                <h4>Recent Form</h4>
-                                {userStats.matchHistory.length > 0 ? (
-                                    // Recent form: because who cares about old losses?
-                                    userStats.matchHistory.slice().reverse().slice(0, 4).map((m, idx) => {
-                                        return (
-                                            <div key={idx} className="recent-match">
-                                                <div>
-                                                    <strong>{new Date(m.matchDate).toLocaleDateString()}</strong>
-                                                    <p style={{ margin: '4px 0 0', color: '#9bb4ff' }}>{m.opponent}</p>
-                                                </div>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <span className={m.isWin ? 'text-green' : 'text-red'}>{m.isWin ? 'WIN' : 'LOSS'}</span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                ) : (
-                                    <p style={{ color: '#666' }}>No recent results yet. Start a match to build your form history.</p>
-                                )}
-                            </div>
-                        </div>
-                    </section>
+                    <OverviewPage totalGames={totalGames} totalWins={totalWins} winRate={winRate} streakLabel={streakLabel} matchHistory={userStats.matchHistory} />
                 )}
 
                 {view === 'leaderboard' && (
-                    <section>
-                        <h3>Leaderboard</h3>
-                        {leaderboardLoading ? (
-                            <p style={{ color: '#aaa' }}>Loading leaderboard...</p>
-                        ) : leaderboardError ? (
-                            <p style={{ color: '#f44336' }}>{leaderboardError}</p>
-                        ) : (
-                            <>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table className="leaderboard-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Rank</th>
-                                                <th>Player</th>
-                                                <th>Games</th>
-                                                <th>Wins</th>
-                                                <th>Win Rate</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {leaderboardRows.map((row) => (
-                                                <tr key={`${row.player}-${row.rank}`} className="leaderboard-row">
-                                                    <td>{row.rank}</td>
-                                                    <td className="player-name">{row.player}</td>
-                                                    <td>{row.games}</td>
-                                                    <td>{row.wins}</td>
-                                                    <td className={row.winRate >= 65 ? 'text-green' : 'text-red'}>{row.winRate}%</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                {leaderboardRows.length === 0 && (
-                                    <p style={{ color: '#666', marginTop: '18px' }}>No shared session users found. Your leaderboard is limited to your account.</p>
-                                )}
-                                <div className="leaderboard-summary">
-                                    <div className="summary-pill">
-                                        <span>Total Matches</span>
-                                        <strong>{totalGames}</strong>
-                                    </div>
-                                    <div className="summary-pill">
-                                        <span>Avg Win Rate</span>
-                                        <strong>{winRate}%</strong>
-                                    </div>
-                                    <div className="summary-pill">
-                                        <span>Active Players</span>
-                                        <strong>{activeSession?.players?.length || 8}</strong>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </section>
+                    <LeaderboardPage
+                        loading={leaderboardLoading}
+                        error={leaderboardError}
+                        rows={leaderboardRows}
+                        totalGames={totalGames}
+                        winRate={winRate}
+                        activePlayerCount={activeSession?.players?.length || 8}
+                    />
                 )}
 
-                {view === 'match-history' && (
-                    <section>
-                        <h3>Match History</h3>
-                        {userStats.matchHistory.length > 0 ? (
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Opponent</th>
-                                        <th>Result</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {userStats.matchHistory.slice().reverse().map((m, i) => {
-                                        return (
-                                            <tr key={i}>
-                                                <td>{new Date(m.matchDate).toLocaleDateString()}</td>
-                                                <td>{m.opponent}</td>
-                                                <td className={m.isWin ? 'text-green' : 'text-red'}>{m.isWin ? 'WIN' : 'LOSS'}</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        ) : (
-                            <p style={{ color: '#666' }}>No matches recorded yet. Start a session to play!</p>
-                        )}
-                    </section>
-                )}
+                {view === 'match-history' && <MatchHistoryPage matchHistory={userStats.matchHistory} />}
 
-                {view === 'session-history' && (
-                    <section>
-                        <h3>Past Sessions</h3>
-                        {sessionHistory.length > 0 ? (
-                            <div style={{ display: 'grid', gap: '14px' }}>
-                                {sessionHistory.map((session) => (
-                                    <div key={session._id} style={{ background: '#181818', padding: '18px', borderRadius: '12px', border: '1px solid #333' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', flexWrap: 'wrap' }}>
-                                            <div>
-                                                <h4 style={{ margin: 0 }}>{session.title || 'Untitled session'}</h4>
-                                                <p style={{ margin: '6px 0 0', color: '#aaa' }}>{new Date(session.createdAt ?? Date.now()).toLocaleString()}</p>
-                                            </div>
-                                            <div style={{ textAlign: 'right' }}>
-                                                <p style={{ margin: 0, color: '#888' }}>{session.isActive ? 'Active' : 'Closed'}</p>
-                                                <p style={{ margin: '4px 0 0', color: '#aaa' }}>{session.players.length} players</p>
-                                            </div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '12px' }}>
-                                            <span style={{ color: '#ccc' }}>Matches: {session.matches.length}</span>
-                                            <span style={{ color: '#ccc' }}>Finished: {session.matches.filter((m) => m.status === 'finished').length}</span>
-                                            <span style={{ color: '#ccc' }}>Ongoing: {session.matches.filter((m) => m.status === 'ongoing').length}</span>
-                                        </div>
-                                        <button
-                                            className="btn-primary"
-                                            style={{ marginTop: '14px' }}
-                                            onClick={() => handleSessionSelect(session._id)}
-                                        >
-                                            View Summary
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p style={{ color: '#666' }}>No past sessions found yet.</p>
-                        )}
-                    </section>
-                )}
+                {view === 'session-history' && <SessionHistoryPage sessions={sessionHistory} onSelect={handleSessionSelect} />}
 
-                {view === 'achievements' && (
-                    <section className="achievements-view">
-                        <div className="section-heading">
-                            <span className="section-kicker">CAREER MILESTONES</span>
-                            <h3>Achievements</h3>
-                            <p>Earned through completed matches and recorded match scores.</p>
-                        </div>
-                        <div className="achievement-sections">
-                            {[
-                                { title: 'Unlocked', items: achievements.filter((item) => item.unlocked) },
-                                { title: 'Locked', items: achievements.filter((item) => !item.unlocked) }
-                            ].map((group) => (
-                                <section className="achievement-group" key={group.title}>
-                                    <div className="achievement-group-heading">
-                                        <h4>{group.title}</h4>
-                                        <span>{group.items.length}</span>
-                                    </div>
-                                    {group.items.length ? (
-                                        <div className="achievement-grid">
-                                            {group.items.map((item) => (
-                                                <article className={`achievement-card${item.unlocked ? ' is-unlocked' : ''}`} key={item.id}>
-                                                    <span className="achievement-state">{item.unlocked ? 'UNLOCKED' : 'IN PROGRESS'}</span>
-                                                    <h5>{item.title}</h5>
-                                                    <p className="achievement-tagline">{item.tagline}</p>
-                                                    <p>{item.requirement}</p>
-                                                    {!item.unlocked && (
-                                                        <>
-                                                            <div className="achievement-progress" role="progressbar" aria-valuenow={item.displayProgress} aria-valuemin={0} aria-valuemax={item.target}>
-                                                                <span style={{ width: `${(item.displayProgress / item.target) * 100}%` }} />
-                                                            </div>
-                                                            <small>{item.displayProgress.toLocaleString()} / {item.target.toLocaleString()}</small>
-                                                        </>
-                                                    )}
-                                                </article>
-                                            ))}
-                                        </div>
-                                    ) : <p className="achievement-empty">{group.title === 'Unlocked' ? 'Your first milestone is waiting.' : 'All current milestones unlocked. Keep playing.'}</p>}
-                                </section>
-                            ))}
-                        </div>
-                    </section>
-                )}
+                {view === 'achievements' && <AchievementsPage achievements={achievements} />}
 
                 {view === 'settings' && (
-                    <section>
-                        <h3>Settings</h3>
-                        {accountActionError && <div className="error-banner" role="alert">{accountActionError}</div>}
-                        {accountActionMessage && <div className="account-success" role="status">{accountActionMessage}</div>}
-                        <div className="settings-card account-settings">
-                            <div className="settings-intro">
-                                <span className="section-kicker">ACCOUNT SECURITY</span>
-                                <h4>Protect your account</h4>
-                                <p>Update your credentials, keep a copy of your data, or remove your account.</p>
-                            </div>
-                            <form className="account-form" onSubmit={handlePasswordChange}>
-                                <h5>Change password</h5>
-                                <label>Current password
-                                    <input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
-                                </label>
-                                <div className="account-form-grid">
-                                    <label>New password
-                                        <input type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
-                                    </label>
-                                    <label>Confirm new password
-                                        <input type="password" autoComplete="new-password" minLength={8} required value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} />
-                                    </label>
-                                </div>
-                                <button className="btn-primary" type="submit" disabled={accountActionBusy}>Update password</button>
-                            </form>
-                            <section className="account-export">
-                                <div>
-                                    <h5>Export account data in JSON format</h5>
-                                    <p>Download your profile details, match history, and recorded lifetime points.</p>
-                                </div>
-                                <button className="btn-primary secondary" type="button" disabled={accountActionBusy} onClick={() => void handleAccountExport()}>
-                                    {accountActionBusy ? 'Please wait…' : 'Download my data'}
-                                </button>
-                            </section>
-                            <form className="account-form danger-zone" onSubmit={handleAccountDeletion}>
-                                <h5>Delete account</h5>
-                                <p>Past sessions and match results will be preserved under your username, which cannot be reused.</p>
-                                <label>Current password
-                                    <input type="password" autoComplete="current-password" required value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} />
-                                </label>
-                                <label>Type <strong>{userStats.username}</strong> to confirm
-                                    <input type="text" autoComplete="off" required value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
-                                </label>
-                                <button className="btn-danger" type="submit" disabled={accountActionBusy}>Delete my account</button>
-                            </form>
-                        </div>
-                    </section>
+                    <SettingsPage
+                        username={userStats.username}
+                        error={accountActionError}
+                        message={accountActionMessage}
+                        busy={accountActionBusy}
+                        currentPassword={currentPassword}
+                        newPassword={newPassword}
+                        confirmNewPassword={confirmNewPassword}
+                        deletePassword={deletePassword}
+                        deleteConfirmation={deleteConfirmation}
+                        setCurrentPassword={setCurrentPassword}
+                        setNewPassword={setNewPassword}
+                        setConfirmNewPassword={setConfirmNewPassword}
+                        setDeletePassword={setDeletePassword}
+                        setDeleteConfirmation={setDeleteConfirmation}
+                        onPasswordChange={handlePasswordChange}
+                        onExport={() => void handleAccountExport()}
+                        onDelete={handleAccountDeletion}
+                    />
                 )}
 
                 {view === 'session-summary' && sessionToShow && (
-                    <section>
-                        <h2 className="text-green">Session Summary</h2>
-                        <p style={{ color: '#aaa' }}>Session: {sessionToShow.title || 'CourtSync Session'}</p>
-                        <div style={{ background: '#1f1f1f', border: '1px solid #333', borderRadius: '12px', padding: '20px', maxWidth: '700px', margin: '20px auto' }}>
-                            <p><strong>Total players:</strong> {sessionToShow.players.length}</p>
-                            <p><strong>Total matches:</strong> {sessionToShow.matches.length}</p>
-                            <p><strong>Completed matches:</strong> {sessionToShow.matches.filter((m) => m.status === 'finished').length}</p>
-                            <p><strong>Ongoing matches:</strong> {sessionToShow.matches.filter((m) => m.status === 'ongoing').length}</p>
-                            <p><strong>Session status:</strong> {sessionToShow.isActive ? 'Active' : 'Closed'}</p>
-                        </div>
-                        <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-                            {sessionToShow.matches.map((match, idx) => (
-                                <div key={idx} style={{ background: '#252525', padding: '18px', borderRadius: '10px', marginBottom: '12px' }}>
-                                    <p style={{ fontWeight: '700' }}>Court {match.court}</p>
-                                    <p>
-                                        <strong>{match.player1 || 'Vacant'}</strong> & <strong>{match.player2 || 'Vacant'}</strong>
-                                        {match.player3 || match.player4 ? ` vs ${match.player3 || 'Vacant'} & ${match.player4 || 'Vacant'}` : ''}
-                                    </p>
-                                    <p>Status: {match.status.toUpperCase()}</p>
-                                    {match.status === 'finished' && (
-                                        <p>Winner: {match.winner}</p>
-                                    )}
-                                    <p>Score: {match.score?.team1} - {match.score?.team2}</p>
-                                </div>
-                            ))}
-                        </div>
-                        <button className="btn-primary" style={{ marginTop: '20px' }} onClick={() => {
+                    <SessionSummaryPage
+                        session={sessionToShow}
+                        selectedSession={selectedSession}
+                        onBack={() => {
                             setSelectedSession(null);
                             setView(selectedSession ? 'session-history' : 'overview');
-                        }}>
-                            {selectedSession ? 'Back to Session History' : 'Back to Dashboard'}
-                        </button>
-                    </section>
+                        }}
+                    />
                 )}
 
                 {view === 'active-match' && activeSession?.isActive && (
-                    <section style={{ textAlign: 'center', padding: '40px 0' }}>
-                        <h2 className="text-green">Match in Progress</h2>
-                        <p style={{ color: '#aaa', marginBottom: '10px' }}>Session: {activeSession.title || 'CourtSync Session'}</p>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
-                            <button className="btn-primary" style={{ minWidth: '140px' }} onClick={handleEndSession} disabled={endingMatchId === 'session'}>
-                                {endingMatchId === 'session' ? 'Ending Session…' : 'End Session'}
-                            </button>
-                        </div>
-                        {matchActionError && <div className="error-banner" style={{ margin: '0 auto 20px', maxWidth: '700px' }}>{matchActionError}</div>}
-                        <div style={{ fontSize: '1.1rem', marginBottom: '20px' }}>
-                            <p>Live timer: <strong>{formatTimer(matchTimer)}</strong></p>
-                        </div>
-                        <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', padding: '16px', margin: '0 auto 20px', maxWidth: '700px' }}>
-                            <h4 style={{ margin: '0 0 10px', color: '#bbb' }}>Add Player to Queue</h4>
-                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                <input
-                                    type="text"
-                                    placeholder="Player name"
-                                    value={newPlayerName}
-                                    onChange={(e) => setNewPlayerName(e.target.value)}
-                                    style={{ flex: 1, minWidth: '180px', padding: '10px', borderRadius: '8px', border: '1px solid #444', background: '#121212', color: '#fff' }}
-                                />
-                                <button className="btn-primary" onClick={handleAddPlayer}>
-                                    Add Player
-                                </button>
-                            </div>
-                        </div>
-                        <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '10px', padding: '16px', margin: '0 auto 20px', maxWidth: '700px' }}>
-                            <h4 style={{ margin: '0 0 10px', color: '#bbb' }}>Waiting Queue</h4>
-                            {waitingQueue.length > 0 ? (
-                                waitingQueue.map((player) => (
-                                    <div key={player.username} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #222' }}>
-                                        <div>
-                                            <div>{player.username}</div>
-                                            <div style={{ color: '#888', fontSize: '0.85rem' }}>Waiting {queueWaitTime(player.joinedAt)}</div>
-                                        </div>
-                                        <button
-                                            className="btn-primary"
-                                            style={{ background: '#c62828', borderColor: '#a82424' }}
-                                            onClick={() => handleRemoveQueuePlayer(player.username)}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))
-                            ) : (
-                                <p style={{ color: '#666' }}>No waiting players at the moment.</p>
-                            )}
-                        </div>
-                        {activeSession.matches?.filter(m => m.status === 'ongoing').length > 0 ? (
-                            activeSession.matches.filter(m => m.status === 'ongoing').map((match, idx) => (
-                                <div key={idx} style={{ background: '#252525', padding: '20px', borderRadius: '10px', marginBottom: '20px', textAlign: 'left' }}>
-                                    <p><strong>Court {match.court}</strong></p>
-                                    <p style={{ margin: '6px 0' }}>
-                                        <strong>{match.player1 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong>{match.player2 || 'Vacant'}</strong>
-                                    </p>
-                                    {match.player3 || match.player4 ? (
-                                        <p style={{ margin: '6px 0' }}>
-                                            <strong>{match.player3 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong>{match.player4 || 'Vacant'}</strong>
-                                        </p>
-                                    ) : null}
-
-                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '16px' }}>
-                                        {isMatchComplete(match) ? (
-                                            match.player3 && match.player4 ? (
-                                                <>
-                                                    <label style={{ color: '#ddd' }}>
-                                                        <input
-                                                            type="radio"
-                                                            name={`winner-${match.matchId}`}
-                                                            value="team1"
-                                                            checked={selectedWinner[match.matchId] === 'team1'}
-                                                            onChange={(e) => setSelectedWinner({ ...selectedWinner, [match.matchId]: e.target.value })}
-                                                        />
-                                                        Team 1: {match.player1} & {match.player2}
-                                                    </label>
-                                                    <label style={{ color: '#ddd' }}>
-                                                        <input
-                                                            type="radio"
-                                                            name={`winner-${match.matchId}`}
-                                                            value="team2"
-                                                            checked={selectedWinner[match.matchId] === 'team2'}
-                                                            onChange={(e) => setSelectedWinner({ ...selectedWinner, [match.matchId]: e.target.value })}
-                                                        />
-                                                        Team 2: {match.player3} & {match.player4}
-                                                    </label>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <label style={{ color: '#ddd' }}>
-                                                        <input
-                                                            type="radio"
-                                                            name={`winner-${match.matchId}`}
-                                                            value={match.player1}
-                                                            checked={selectedWinner[match.matchId] === match.player1}
-                                                            onChange={(e) => setSelectedWinner({ ...selectedWinner, [match.matchId]: e.target.value })}
-                                                        />
-                                                        {match.player1} wins
-                                                    </label>
-                                                    <label style={{ color: '#ddd' }}>
-                                                        <input
-                                                            type="radio"
-                                                            name={`winner-${match.matchId}`}
-                                                            value={match.player2}
-                                                            checked={selectedWinner[match.matchId] === match.player2}
-                                                            onChange={(e) => setSelectedWinner({ ...selectedWinner, [match.matchId]: e.target.value })}
-                                                        />
-                                                        {match.player2} wins
-                                                    </label>
-                                                </>
-                                            )
-                                        ) : (
-                                            <div style={{ color: '#f0a500', fontSize: '0.95rem' }}>
-                                                Match line-up is incomplete. Fill all required player spots before finishing this match.
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
-                                        {waitingQueue.length > 0 && (
-                                            <div style={{ display: 'grid', gap: '8px' }}>
-                                                <label style={{ color: '#aaa' }}>Replace a player from this match</label>
-                                                {(activeSession.isDoubles ? ['player1', 'player2', 'player3', 'player4'] as PlayerField[] : ['player1', 'player2'] as PlayerField[]).map((field) => {
-                                                    const currentName = match[field] || 'Vacant spot';
-                                                    const key = `${match.matchId}-${field}`;
-                                                    return (
-                                                        <div key={key} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                                            <span style={{ color: '#ddd', minWidth: '90px' }}>{currentName}</span>
-                                                            <select
-                                                                value={replacementSelection[key] || ''}
-                                                                onChange={(e) => setReplacementSelection({ ...replacementSelection, [key]: e.target.value })}
-                                                                style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #444', background: '#1a1a1a', color: '#fff' }}
-                                                            >
-                                                                <option value="">Choose replacement</option>
-                                                                {waitingQueue.map((player) => (
-                                                                    <option key={player.username} value={player.username}>{player.username}</option>
-                                                                ))}
-                                                            </select>
-                                                            <button
-                                                                className="btn-primary"
-                                                                style={{ padding: '10px 16px' }}
-                                                                onClick={() => handleReplacePlayer(match, field)}
-                                                            >
-                                                                Replace
-                                                            </button>
-                                                            {match[field] && (
-                                                                <button
-                                                                    className="btn-primary"
-                                                                    style={{ padding: '10px 16px', background: '#c62828', borderColor: '#a82424' }}
-                                                                    onClick={() => {
-                                                                        const playerName = match[field];
-                                                                        if (playerName) handleRemoveQueuePlayer(playerName);
-                                                                    }}
-                                                                >
-                                                                    Remove
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                                        <div style={{ display: 'grid', gap: '8px' }}>
-                                            <label style={{ color: '#aaa' }}>Team 1 Score</label>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={matchScores[match.matchId]?.team1 || 0}
-                                                onChange={(e) => handleScoreChange(match.matchId, 'team1', e.target.value)}
-                                                style={{ width: '80px', padding: '8px', borderRadius: '6px', border: '1px solid #444', background: '#1a1a1a', color: '#fff' }}
-                                            />
-                                        </div>
-
-                                        <div style={{ display: 'grid', gap: '8px' }}>
-                                            <label style={{ color: '#aaa' }}>Team 2 Score</label>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={matchScores[match.matchId]?.team2 || 0}
-                                                onChange={(e) => handleScoreChange(match.matchId, 'team2', e.target.value)}
-                                                style={{ width: '80px', padding: '8px', borderRadius: '6px', border: '1px solid #444', background: '#1a1a1a', color: '#fff' }}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <button
-                                        className="btn-primary"
-                                        style={{ marginTop: '18px' }}
-                                        onClick={() => handleEndMatch(match)}
-                                        disabled={endingMatchId === match.matchId || !isMatchComplete(match)}
-                                    >
-                                        {endingMatchId === match.matchId ? 'Ending…' : 'Finish Match'}
-                                    </button>
-                                </div>
-                            ))
-                        ) : (
-                            <p>All matches finished. Generating next round...</p>
-                        )}
-                    </section>
+                    <ActiveMatchPage
+                        session={activeSession}
+                        endingMatchId={endingMatchId}
+                        matchActionError={matchActionError}
+                        matchTimer={formatTimer(matchTimer)}
+                        newPlayerName={newPlayerName}
+                        setNewPlayerName={setNewPlayerName}
+                        onEndSession={handleEndSession}
+                        onAddPlayer={handleAddPlayer}
+                        waitingQueue={waitingQueue}
+                        queueWaitTime={queueWaitTime}
+                        onRemoveQueuePlayer={handleRemoveQueuePlayer}
+                        isMatchComplete={isMatchComplete}
+                        selectedWinner={selectedWinner}
+                        setSelectedWinner={setSelectedWinner}
+                        replacementSelection={replacementSelection}
+                        setReplacementSelection={setReplacementSelection}
+                        onReplacePlayer={handleReplacePlayer}
+                        matchScores={matchScores}
+                        onScoreChange={handleScoreChange}
+                        onEndMatch={handleEndMatch}
+                    />
                 )}
             </div>
         </div>
