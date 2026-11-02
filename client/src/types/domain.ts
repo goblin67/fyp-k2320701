@@ -8,6 +8,9 @@ export interface MatchHistoryEntry {
 export interface UserStats {
   username: string;
   matchHistory: MatchHistoryEntry[];
+  completedMatches: number;
+  pointsFor: number;
+  pointsAgainst: number;
 }
 
 export interface SessionPlayer {
@@ -73,7 +76,6 @@ export interface LeaderboardRow {
   games: number;
   wins: number;
   winRate: number;
-  achievements: string[];
 }
 
 export interface ApiErrorResponse {

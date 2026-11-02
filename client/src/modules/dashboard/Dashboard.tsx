@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 import OrganiserPanel from '../organiser/OrganiserPanel';
 
-type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history';
+type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history' | 'achievements';
 
 interface UserProfileResponse {
     username: string;
     matchHistory?: MatchHistoryEntry[];
+    completedMatches?: number;
+    pointsFor?: number;
+    pointsAgainst?: number;
 }
 
 interface SessionResponse {
@@ -33,14 +36,19 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
     const [showOrganiserPanel, setShowOrganiserPanel] = useState(false);
     const [showBetaAccess, setShowBetaAccess] = useState(false);
-    const [userStats, setUserStats] = useState<UserStats>({ username: '', matchHistory: [] });
+    const [userStats, setUserStats] = useState<UserStats>({ username: '', matchHistory: [], completedMatches: 0, pointsFor: 0, pointsAgainst: 0 });
     const [loading, setLoading] = useState(true);
     const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
     const [leaderboardLoading, setLeaderboardLoading] = useState(false);
     const [leaderboardError, setLeaderboardError] = useState('');
-    const [dyslexiaMode, setDyslexiaMode] = useState(false);
-    const [fontSizePercent, setFontSizePercent] = useState(110);
-    const dashboardClass = dyslexiaMode ? 'dashboard-container dyslexia-mode' : 'dashboard-container';
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [deletePassword, setDeletePassword] = useState('');
+    const [deleteConfirmation, setDeleteConfirmation] = useState('');
+    const [accountActionError, setAccountActionError] = useState('');
+    const [accountActionMessage, setAccountActionMessage] = useState('');
+    const [accountActionBusy, setAccountActionBusy] = useState(false);
     const [activeSession, setActiveSession] = useState<SessionData | null>(null);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
     const [sessionHistory, setSessionHistory] = useState<SessionData[]>([]);
@@ -88,6 +96,18 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         return streak;
     })();
     const streakLabel = currentStreak >= 0 ? `${currentStreak} Wins` : `${-currentStreak} Loss`;
+    const achievements = [
+        { id: 'first-login', title: 'First Login', tagline: 'You made it to the court. Now make it count.', requirement: 'Sign in to your account', progress: 1, target: 1 },
+        { id: 'first-match', title: 'First Match', tagline: 'No warm-up like the real thing.', requirement: 'Complete your first match', progress: userStats.completedMatches, target: 1 },
+        { id: 'first-win', title: 'First Win', tagline: 'The scoreboard knows your name.', requirement: 'Win your first match', progress: totalWins, target: 1 },
+        { id: 'matches-50', title: 'Another One Bites the Dust', tagline: 'Fifty matches. Still standing.', requirement: 'Complete 50 matches', progress: userStats.completedMatches, target: 50 },
+        { id: 'points-1000-for', title: 'Point Collector', tagline: 'The other side has seen enough.', requirement: 'Score 1,000 points', progress: userStats.pointsFor, target: 1000 },
+        { id: 'points-1000-against', title: 'Ouch!', tagline: 'A thousand points conceded. Call it a learning curve.', requirement: 'Concede 1,000 points', progress: userStats.pointsAgainst, target: 1000 }
+    ].map((achievement) => ({
+        ...achievement,
+        unlocked: achievement.progress >= achievement.target,
+        displayProgress: Math.min(achievement.progress, achievement.target)
+    }));
 
     const isMatchComplete = (match: SessionMatch) => {
         if (!activeSession) return false;
@@ -124,17 +144,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
 
     useEffect(() => {
         fetchData();
-
-        const savedDyslexia = localStorage.getItem('dyslexiaMode');
-        const savedFontSize = localStorage.getItem('fontSizePercent');
-        if (savedDyslexia !== null) setDyslexiaMode(savedDyslexia === 'true');
-        if (savedFontSize) setFontSizePercent(Number(savedFontSize));
     }, []);
-
-    useEffect(() => {
-        localStorage.setItem('dyslexiaMode', dyslexiaMode.toString());
-        localStorage.setItem('fontSizePercent', fontSizePercent.toString());
-    }, [dyslexiaMode, fontSizePercent]);
 
     useEffect(() => {
         const ongoingMatch = activeSession?.matches?.find((m) => m.status === 'ongoing');
@@ -174,7 +184,10 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 const userData = await readJson<UserProfileResponse>(userRes);
                 setUserStats({
                     username: userData.username || 'User',
-                    matchHistory: userData.matchHistory || []
+                    matchHistory: userData.matchHistory || [],
+                    completedMatches: userData.completedMatches ?? userData.matchHistory?.length ?? 0,
+                    pointsFor: userData.pointsFor ?? 0,
+                    pointsAgainst: userData.pointsAgainst ?? 0
                 });
             } else {
                 setErrorMessage('Failed to load profile. Backend might be down.');
@@ -202,6 +215,97 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             setErrorMessage('Connection lost. Please refresh or check backend logs.');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setAccountActionError('');
+        setAccountActionMessage('');
+        if (newPassword !== confirmNewPassword) {
+            setAccountActionError('The new passwords do not match.');
+            return;
+        }
+
+        setAccountActionBusy(true);
+        try {
+            const response = await fetch(`${API_URL}/api/users/me/password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `******'token')}`
+                },
+                body: JSON.stringify({ currentPassword, newPassword })
+            });
+            const result = await readJson<ErrorResponse & { message?: string }>(response);
+            if (!response.ok) throw new Error(result.error ?? 'Could not update password.');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            setAccountActionMessage(result.message ?? 'Password updated.');
+        } catch (error) {
+            setAccountActionError(getErrorMessage(error));
+        } finally {
+            setAccountActionBusy(false);
+        }
+    };
+
+    const handleAccountExport = async () => {
+        setAccountActionError('');
+        setAccountActionMessage('');
+        setAccountActionBusy(true);
+        try {
+            const response = await fetch(`${API_URL}/api/users/me/export`, {
+                headers: { 'Authorization': `******'token')}` }
+            });
+            if (!response.ok) {
+                const result = await readJson<ErrorResponse>(response);
+                throw new Error(result.error ?? 'Could not export account data.');
+            }
+            const downloadUrl = URL.createObjectURL(await response.blob());
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = 'courtsync-account-data.json';
+            document.body.append(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+            setAccountActionMessage('Your account data export has been downloaded.');
+        } catch (error) {
+            setAccountActionError(getErrorMessage(error));
+        } finally {
+            setAccountActionBusy(false);
+        }
+    };
+
+    const handleAccountDeletion = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setAccountActionError('');
+        setAccountActionMessage('');
+        if (deleteConfirmation !== userStats.username) {
+            setAccountActionError('Type your username exactly to confirm account deletion.');
+            return;
+        }
+        if (!window.confirm('Delete your account? Past sessions and match results will remain under your username. This cannot be undone.')) return;
+
+        setAccountActionBusy(true);
+        try {
+            const response = await fetch(`${API_URL}/api/users/me`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `******'token')}`
+                },
+                body: JSON.stringify({ password: deletePassword, confirmation: deleteConfirmation })
+            });
+            const result = await readJson<ErrorResponse & { message?: string }>(response);
+            if (!response.ok) throw new Error(result.error ?? 'Could not delete account.');
+            onLogout();
+            navigate('/auth');
+        } catch (error) {
+            setAccountActionError(getErrorMessage(error));
+        } finally {
+            setAccountActionBusy(false);
         }
     };
 
@@ -427,18 +531,18 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>Connecting to CourtSync...</div>;
 
     return (
-        <div className={dashboardClass} style={dyslexiaMode ? { fontSize: `${fontSizePercent}%` } : {}}>
+        <div className="dashboard-container">
             <style>
                 {`
                 .dashboard-container { position: relative; isolation: isolate; overflow: hidden; background: radial-gradient(ellipse at 82% 0%, rgba(98,215,223,.09), transparent 34rem), linear-gradient(90deg, transparent calc(50% - .5px), rgba(174,209,211,.035) 50%, transparent calc(50% + .5px)), #080d11; color: #e8edf2; min-height: 100vh; padding: 34px 20px; font-family: Inter, 'Segoe UI', sans-serif; }
                 .dashboard-container::before { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; opacity: .14; background: linear-gradient(90deg, transparent 24.9%, rgba(174,209,211,.26) 25%, transparent 25.1%, transparent 74.9%, rgba(174,209,211,.26) 75%, transparent 75.1%), linear-gradient(0deg, transparent 49.9%, rgba(174,209,211,.24) 50%, transparent 50.1%); }
-                .dash-card { background: rgba(11,17,21,.92); border: 1px solid rgba(190,215,222,.14); border-radius: 20px; padding: 25px; max-width: 1200px; margin: 0 auto; box-shadow: 0 24px 80px rgba(0,0,0,.32); backdrop-filter: blur(12px); }
+                .dash-card { background: rgba(11,17,21,.92); border: 1px solid rgba(190,215,222,.14); border-radius: 12px; padding: 25px; max-width: 1200px; margin: 0 auto; box-shadow: 0 24px 80px rgba(0,0,0,.32); backdrop-filter: blur(12px); }
                 .dash-card > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
                 .dash-card > nav { display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 1px solid rgba(190,215,222,.14); padding-bottom: 14px; }
                 .dash-card > nav button { background: #111a20; color: #a4b3b8; border: 1px solid rgba(190,215,222,.1); padding: 10px 16px; cursor: pointer; font-weight: 700; transition: 0.2s; }
                 .dash-card > nav button:hover { color: #edf4f5; background: #19262c; }
                 .dash-card > nav button.active { color: #111910; background: #c8f169; border-color: #c8f169; }
-                .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #c8f169, #62d7df); padding: 24px 28px; border-radius: 16px; margin-bottom: 20px; color: #101914; }
+                .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #c8f169, #62d7df); padding: 24px 28px; border-radius: 10px; margin-bottom: 20px; color: #101914; }
                 .brand { font-size: 1.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
                 .brand strong { font-weight: 800; }
                 .subtext { margin: 6px 0 0; color: rgba(16,25,20,0.72); font-size: 0.95rem; font-weight: 600; }
@@ -451,50 +555,22 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .top-tabs .beta-unlock:hover { background: #202d25; color: #e5ffad; }
                 .beta-access-note { margin: -8px 0 20px; color: #b5b8c7; font-size: 0.9rem; }
                 .beta-access-note a { color: #8db7ff; }
-                .beta-request-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; padding: 22px 24px; background: #111a20; border: 1px solid rgba(98,215,223,.25); border-radius: 14px; }
+                .beta-request-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; padding: 22px 24px; background: #111a20; border: 1px solid rgba(98,215,223,.25); border-radius: 10px; }
                 .beta-request-card h3 { margin: 0 0 8px; }
                 .beta-request-card p { margin: 0; color: #aab9bd; line-height: 1.6; }
                 .beta-request-card a { color: #62d7df; }
                 .beta-request-card .beta-unlock { flex: 0 0 auto; padding: 12px 20px; border-radius: 9px; background: #c8f169; color: #101914; font-weight: 800; text-decoration: none; }
-                .dyslexia-mode .beta-request-card { background: #132032; border-color: rgba(169,198,255,0.45); }
-                .dyslexia-mode .beta-request-card p { color: #e9f0ff; }
-                .dyslexia-mode .beta-request-card a { color: #a9c6ff; }
-                .dyslexia-mode { background: #090b10; color: #f8f8f8; }
-                .dyslexia-mode .dash-card { background: #10151f; border-color: #3d6ff0; }
-                .dyslexia-mode .topbar { background: linear-gradient(135deg, #2545a5, #1a6ad5); }
-                .dyslexia-mode .top-tabs button { background: rgba(255,255,255,0.08); color: #e9f0ff; border-color: rgba(255,255,255,0.18); }
-                .dyslexia-mode .top-tabs button.active { background: #3c7cff; color: #fff; border-color: rgba(255,255,255,0.6); }
-                .dyslexia-mode .top-tabs .beta-unlock { background: rgba(255,255,255,0.08); color: #e9f0ff; border-color: rgba(255,255,255,0.35); }
-                .dyslexia-mode .beta-access-note { color: #e9f0ff; }
-                .dyslexia-mode .beta-access-note a { color: #a9c6ff; }
-                .dyslexia-mode .dash-card, .dyslexia-mode .settings-card { border-color: #2c6bec; }
-                .dyslexia-mode .summary-card, .dyslexia-mode .profile-card, .dyslexia-mode .settings-card { background: #132032; }
-                .dyslexia-mode .settings-preview { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
-                .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #18262b, #142126); border: 1px solid rgba(98,215,223,.22); padding: 26px 30px; border-radius: 15px; margin-bottom: 20px; box-shadow: inset 3px 0 #c8f169; }
+                .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #18262b, #142126); border: 1px solid rgba(98,215,223,.22); padding: 26px 30px; border-radius: 10px; margin-bottom: 20px; box-shadow: inset 3px 0 #c8f169; }
                 .hero-card h2 { margin: 0; color: #f0f6f5; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.02em; }
                 .hero-card p { margin: 10px 0 0; color: #aab9bd; }
                 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px; }
-                .summary-card { background: #111a20; border: 1px solid rgba(190,215,222,.12); border-radius: 13px; padding: 21px; }
+                .summary-card { background: #111a20; border: 1px solid rgba(190,215,222,.12); border-radius: 9px; padding: 21px; }
                 .summary-card span { display: block; color: #9aabb2; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
                 .summary-card strong { display: block; color: #c8f169; font-size: 2rem; }
-                .settings-card { background: #1f232d; border: 1px solid #333; border-radius: 20px; padding: 28px; margin: 0 auto 24px; max-width: 760px; }
+                .settings-card { background: #1f232d; border: 1px solid #333; border-radius: 12px; padding: 28px; margin: 0 auto 24px; max-width: 900px; }
                 .settings-card h4 { margin: 0 0 14px; color: #fff; font-size: 1.05rem; letter-spacing: 0.04em; }
                 .settings-card p { margin: 0; color: #c2d1ff; }
-                .settings-row { display: grid; gap: 18px; margin-top: 22px; }
-                .settings-option { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 20px; background: #11171f; border: 1px solid #2a3040; border-radius: 16px; }
-                .settings-option strong { color: #fff; }
-                .settings-label { color: #97aaff; font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; }
-                .settings-range { width: 100%; display: flex; align-items: center; gap: 16px; }
-                .settings-range input { flex: 1; accent-color: #4b86ff; }
-                .settings-value { color: #c7d6ff; min-width: 56px; text-align: right; font-weight: 700; }
-                .settings-preview { margin-top: 18px; border: 1px solid #2a3040; border-radius: 16px; padding: 18px 20px; color: #eef2ff; }
-                .settings-toggle { display: inline-flex; align-items: center; justify-content: space-between; width: 100%; }
-                .toggle-pill { width: 48px; height: 26px; border-radius: 999px; background: #29354f; position: relative; transition: background 0.25s ease; }
-                .toggle-pill.active { background: #4b86ff; }
-                .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 0.25s ease; }
-                .toggle-pill.active .toggle-thumb { transform: translateX(22px); }
-                .settings-meta { color: #96b2ff; font-size: 0.95rem; }
-                .match-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 18px 20px; display: grid; gap: 12px; }
+                .match-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 18px 20px; display: grid; gap: 12px; }
                 .match-card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 0.95rem; color: #d0d7ff; }
                 .match-card-body { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
                 .match-title { margin: 0; font-weight: 700; font-size: 1rem; color: #fff; }
@@ -502,21 +578,20 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .match-win { color: #4CAF50; font-weight: 700; }
                 .match-loss { color: #f44336; font-weight: 700; }
                 .leaderboard-table { width: 100%; border-collapse: collapse; min-width: 760px; margin-top: 18px; }
-                .leaderboard-table th { background: linear-gradient(90deg, #4b86ff, #66d4ff); color: #fff; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.12em; padding: 18px 16px; text-align: left; }
+                .leaderboard-table th { background: #19272c; color: #c8f169; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.12em; padding: 18px 16px; text-align: left; }
                 .leaderboard-table td { padding: 18px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); color: #e6ecff; vertical-align: middle; }
                 .leaderboard-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
                 .player-name { font-weight: 700; color: #fff; }
-                .achievement-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.08); color: #cdd7ff; font-size: 0.78rem; margin-right: 8px; margin-bottom: 8px; }
                 .overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
-                .profile-card { background: #181a20; border: 1px solid #333; border-radius: 18px; padding: 24px; }
+                .profile-card { background: #181a20; border: 1px solid #333; border-radius: 9px; padding: 24px; }
                 .profile-card h4 { margin: 0 0 14px; color: #fff; }
                 .profile-line { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06); color: #c5d1ff; }
                 .profile-line:last-child { border-bottom: none; }
-                .recent-match { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 14px; background: #141820; margin-bottom: 12px; }
+                .recent-match { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 8px; background: #141820; margin-bottom: 12px; }
                 .recent-match:last-child { margin-bottom: 0; }
                 .recent-match strong { color: #fff; }
                 .leaderboard-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
-                .summary-pill { background: #11171f; border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 18px; text-align: center; }
+                .summary-pill { background: #11171f; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 18px; text-align: center; }
                 .summary-pill span { display: block; color: #a7b6ff; font-size: 0.78rem; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.12em; }
                 .summary-pill strong { font-size: 1.9rem; color: #fff; }
                 table { width: 100%; border-collapse: collapse; margin-top: 15px; }
@@ -548,7 +623,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     .beta-request-card { align-items: stretch; flex-direction: column; padding: 18px; }
                     .beta-request-card .beta-unlock { justify-content: center; text-align: center; }
                     .settings-card { padding: 18px; }
-                    .settings-option { align-items: stretch; flex-direction: column; padding: 16px; }
                     .dashboard-container table { display: block; max-width: 100%; overflow-x: auto; }
                     .dashboard-container th, .dashboard-container td { padding: 11px 9px; }
                     .dashboard-container section { min-width: 0; }
@@ -561,8 +635,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     .top-tabs button, .top-tabs .beta-unlock { flex-basis: 120px; font-size: 0.88rem; }
                     .summary-card { padding: 13px 10px; }
                     .summary-card strong { font-size: 1.45rem; }
-                    .settings-range { gap: 8px; }
-                    .settings-value { min-width: 46px; }
                 }
                 .dashboard-container h3 { color: #eef4f3; letter-spacing: -0.02em; }
                 .summary-card, .profile-card, .settings-card, .match-card, .recent-match, .summary-pill { border-color: rgba(190,215,222,.12); background-color: #111a20; }
@@ -573,16 +645,53 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .leaderboard-table th { background: #19272c; color: #c8f169; border-bottom: 1px solid rgba(200,241,105,.35); }
                 .leaderboard-table td { border-color: rgba(190,215,222,.1); }
                 .leaderboard-row:nth-child(odd) { background: rgba(190,215,222,.035); }
-                .achievement-pill { background: rgba(98,215,223,.1); color: #a8e9eb; }
-                .settings-option, .settings-preview { background: #0b1216; border-color: rgba(190,215,222,.12); }
-                .settings-label, .settings-meta { color: #62d7df; }
-                .settings-range input { accent-color: #c8f169; }
-                .toggle-pill.active { background: #c8f169; }
                 .btn-primary { background: #c8f169; color: #101914; }
                 .logout-btn { background: #111a20; color: #ff8c86; border-color: rgba(255,109,105,.3); }
                 .error-banner { background: rgba(255,109,105,.09); border-color: rgba(255,109,105,.34); color: #ffaaa7; }
-                .dyslexia-mode { background-color: #080d11; color: #fff; }
-                .dyslexia-mode .dash-card, .dyslexia-mode .summary-card, .dyslexia-mode .profile-card, .dyslexia-mode .settings-card { background: #111a20; border-color: rgba(200,241,105,.45); }
+                .settings-card, .profile-card, .summary-card, .summary-pill, .recent-match { border-radius: 9px; }
+                .account-settings { display: grid; gap: 20px; }
+                .settings-intro { padding-bottom: 16px; border-bottom: 1px solid rgba(190,215,222,.12); }
+                .settings-intro h4, .account-form h5, .account-export h5 { margin: 6px 0; color: #eef4f3; font-size: 1rem; }
+                .settings-intro p, .account-form > p, .account-export p { margin: 0; color: #9aabb2; line-height: 1.55; }
+                .section-kicker { color: #62d7df; font-size: .72rem; font-weight: 800; letter-spacing: .14em; }
+                .account-form { display: grid; gap: 14px; padding: 18px; border: 1px solid rgba(190,215,222,.12); background: #0d1519; border-radius: 8px; }
+                .account-form label { display: grid; gap: 7px; color: #aab9bd; font-size: .88rem; font-weight: 650; }
+                .account-form input { width: 100%; min-height: 42px; padding: 10px 12px; color: #eef4f3; background: #080f12; border: 1px solid rgba(190,215,222,.18); border-radius: 6px; }
+                .account-form input:focus { outline: 2px solid rgba(98,215,223,.65); outline-offset: 1px; border-color: #62d7df; }
+                .account-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+                .account-export { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px; border: 1px solid rgba(190,215,222,.12); border-radius: 8px; background: #0d1519; }
+                .account-export .btn-primary { flex: 0 0 auto; }
+                .btn-primary.secondary { color: #eaf3f3; background: #172229; border: 1px solid rgba(190,215,222,.22); }
+                .danger-zone { border-color: rgba(255,109,105,.26); }
+                .btn-danger { justify-self: start; padding: 11px 16px; color: #fff; background: #913b3b; border: 1px solid rgba(255,109,105,.55); border-radius: 7px; font-weight: 750; }
+                .btn-danger:hover:not(:disabled) { background: #aa4545; }
+                .account-success { margin-bottom: 18px; padding: 12px 14px; color: #d7f6a0; border: 1px solid rgba(200,241,105,.3); background: rgba(200,241,105,.07); border-radius: 7px; }
+                .section-heading { margin: 4px 0 22px; }
+                .section-heading h3 { margin: 6px 0; }
+                .section-heading p { margin: 0; color: #9aabb2; }
+                .achievement-sections { display: grid; gap: 24px; }
+                .achievement-group { padding: 18px; border: 1px solid rgba(190,215,222,.12); border-radius: 10px; background: #0e171b; }
+                .achievement-group-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(190,215,222,.12); }
+                .achievement-group-heading h4 { margin: 0; color: #edf4f3; font-size: 1rem; }
+                .achievement-group-heading span { min-width: 26px; padding: 2px 7px; color: #c8f169; background: rgba(200,241,105,.1); border-radius: 4px; text-align: center; font-size: .8rem; font-weight: 800; }
+                .achievement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 12px; }
+                .achievement-card { min-width: 0; padding: 16px; border: 1px solid rgba(190,215,222,.12); border-left: 3px solid #35444a; border-radius: 7px; background: #111b20; }
+                .achievement-card.is-unlocked { border-left-color: #c8f169; }
+                .achievement-state { color: #90a2a8; font-size: .67rem; font-weight: 800; letter-spacing: .12em; }
+                .is-unlocked .achievement-state { color: #c8f169; }
+                .achievement-card h5 { margin: 8px 0 5px; color: #edf4f3; font-size: 1rem; }
+                .achievement-card p { margin: 6px 0; color: #9aabb2; font-size: .88rem; }
+                .achievement-card .achievement-tagline { color: #62d7df; font-weight: 650; }
+                .achievement-card small { color: #9aabb2; }
+                .achievement-progress { height: 5px; margin: 13px 0 6px; overflow: hidden; background: #263237; border-radius: 3px; }
+                .achievement-progress span { display: block; height: 100%; background: #62d7df; }
+                .achievement-empty { margin: 0; color: #9aabb2; }
+                @media (max-width: 600px) {
+                    .account-form-grid { grid-template-columns: 1fr; }
+                    .account-export { align-items: stretch; flex-direction: column; }
+                    .account-export .btn-primary { width: 100%; }
+                    .achievement-group { padding: 14px; }
+                }
                 `}
             </style>
 
@@ -619,6 +728,10 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                         setSelectedSession(null);
                         setView('match-history');
                     }}>Match History</button>
+                    <button className={view === 'achievements' ? 'active' : ''} onClick={() => {
+                        setSelectedSession(null);
+                        setView('achievements');
+                    }}>Achievements</button>
                     <button className={view === 'session-history' ? 'active' : ''} onClick={() => {
                         setSelectedSession(null);
                         fetchSessionHistory();
@@ -732,7 +845,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                                 <th>Games</th>
                                                 <th>Wins</th>
                                                 <th>Win Rate</th>
-                                                <th>Achievements</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -743,11 +855,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                                     <td>{row.games}</td>
                                                     <td>{row.wins}</td>
                                                     <td className={row.winRate >= 65 ? 'text-green' : 'text-red'}>{row.winRate}%</td>
-                                                    <td>
-                                                        {row.achievements.map((tag, index) => (
-                                                            <span key={index} className="achievement-pill">{tag}</span>
-                                                        ))}
-                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -843,50 +950,95 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     </section>
                 )}
 
+                {view === 'achievements' && (
+                    <section className="achievements-view">
+                        <div className="section-heading">
+                            <span className="section-kicker">CAREER MILESTONES</span>
+                            <h3>Achievements</h3>
+                            <p>Earned through completed matches and recorded match scores.</p>
+                        </div>
+                        <div className="achievement-sections">
+                            {[
+                                { title: 'Unlocked', items: achievements.filter((item) => item.unlocked) },
+                                { title: 'Locked', items: achievements.filter((item) => !item.unlocked) }
+                            ].map((group) => (
+                                <section className="achievement-group" key={group.title}>
+                                    <div className="achievement-group-heading">
+                                        <h4>{group.title}</h4>
+                                        <span>{group.items.length}</span>
+                                    </div>
+                                    {group.items.length ? (
+                                        <div className="achievement-grid">
+                                            {group.items.map((item) => (
+                                                <article className={`achievement-card${item.unlocked ? ' is-unlocked' : ''}`} key={item.id}>
+                                                    <span className="achievement-state">{item.unlocked ? 'UNLOCKED' : 'IN PROGRESS'}</span>
+                                                    <h5>{item.title}</h5>
+                                                    <p className="achievement-tagline">{item.tagline}</p>
+                                                    <p>{item.requirement}</p>
+                                                    {!item.unlocked && (
+                                                        <>
+                                                            <div className="achievement-progress" role="progressbar" aria-valuenow={item.displayProgress} aria-valuemin={0} aria-valuemax={item.target}>
+                                                                <span style={{ width: `${(item.displayProgress / item.target) * 100}%` }} />
+                                                            </div>
+                                                            <small>{item.displayProgress.toLocaleString()} / {item.target.toLocaleString()}</small>
+                                                        </>
+                                                    )}
+                                                </article>
+                                            ))}
+                                        </div>
+                                    ) : <p className="achievement-empty">{group.title === 'Unlocked' ? 'Your first milestone is waiting.' : 'All current milestones unlocked. Keep playing.'}</p>}
+                                </section>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
                 {view === 'settings' && (
                     <section>
                         <h3>Settings</h3>
-                        <div className="settings-card">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                <span style={{ fontSize: '1.1rem', color: '#7db7ff' }}>ACCESSIBILITY</span>
+                        {accountActionError && <div className="error-banner" role="alert">{accountActionError}</div>}
+                        {accountActionMessage && <div className="account-success" role="status">{accountActionMessage}</div>}
+                        <div className="settings-card account-settings">
+                            <div className="settings-intro">
+                                <span className="section-kicker">ACCOUNT SECURITY</span>
+                                <h4>Protect your account</h4>
+                                <p>Update your credentials, keep a copy of your data, or remove your account.</p>
                             </div>
-                            <h4>Dyslexia Friendly Mode</h4>
-                            <div className="settings-row">
-                                <div className="settings-option">
-                                    <div style={{ flex: 1 }}>
-                                        <p className="settings-label">Text Size</p>
-                                        <div className="settings-range">
-                                            <span style={{ color: '#8aa3ff' }}>Small</span>
-                                            <input
-                                                type="range"
-                                                min="100"
-                                                max="130"
-                                                value={fontSizePercent}
-                                                onChange={(e) => setFontSizePercent(Number(e.target.value))}
-                                            />
-                                            <span style={{ color: '#8aa3ff' }}>Large</span>
-                                        </div>
-                                    </div>
-                                    <div className="settings-value">{fontSizePercent}%</div>
+                            <form className="account-form" onSubmit={handlePasswordChange}>
+                                <h5>Change password</h5>
+                                <label>Current password
+                                    <input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+                                </label>
+                                <div className="account-form-grid">
+                                    <label>New password
+                                        <input type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+                                    </label>
+                                    <label>Confirm new password
+                                        <input type="password" autoComplete="new-password" minLength={8} required value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} />
+                                    </label>
                                 </div>
-                                <div className="settings-option">
-                                    <div>
-                                        <p className="settings-label">Dyslexia Friendly Mode</p>
-                                        <p className="settings-meta">High contrast UI and slightly larger font for easier reading.</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className={`toggle-pill${dyslexiaMode ? ' active' : ''}`}
-                                        onClick={() => setDyslexiaMode((prev) => !prev)}
-                                    >
-                                        <span className="toggle-thumb" />
-                                    </button>
+                                <button className="btn-primary" type="submit" disabled={accountActionBusy}>Update password</button>
+                            </form>
+                            <section className="account-export">
+                                <div>
+                                    <h5>Export account data</h5>
+                                    <p>Download your profile details, match history, and recorded lifetime points.</p>
                                 </div>
-                            </div>
-                            <div className="settings-preview">
-                                <p style={{ margin: '0 0 10px', fontWeight: 700, color: '#fff' }}>Preview</p>
-                                <p style={{ margin: 0 }}>The quick brown fox jumps over the lazy dog.</p>
-                            </div>
+                                <button className="btn-primary secondary" type="button" disabled={accountActionBusy} onClick={() => void handleAccountExport()}>
+                                    {accountActionBusy ? 'Please wait…' : 'Download my data'}
+                                </button>
+                            </section>
+                            <form className="account-form danger-zone" onSubmit={handleAccountDeletion}>
+                                <h5>Delete account</h5>
+                                <p>Past sessions and match results will be preserved under your username, which cannot be reused.</p>
+                                <label>Current password
+                                    <input type="password" autoComplete="current-password" required value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} />
+                                </label>
+                                <label>Type <strong>{userStats.username}</strong> to confirm
+                                    <input type="text" autoComplete="off" required value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
+                                </label>
+                                <button className="btn-danger" type="submit" disabled={accountActionBusy}>Delete my account</button>
+                            </form>
                         </div>
                     </section>
                 )}

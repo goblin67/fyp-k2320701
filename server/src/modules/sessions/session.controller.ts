@@ -130,7 +130,7 @@ const buildMatches = (players: SessionPlayer[], numCourts: number, isDoubles: bo
 const findSessionPlayer = (session: SessionDocument, username: string): SessionPlayer | undefined => session.players.find((player) => player.username === username);
 
 const createPlayerObject = async (name: string): Promise<SessionPlayer> => {
-    const user = await User.findOne({ username: name });
+    const user = await User.findOne({ username: name, isDeleted: { $ne: true } });
     return {
         username: name,
         isGuest: !user,
@@ -193,7 +193,7 @@ export const updateMatchRatings = async (
 ): Promise<void> => {
     const loadRatingPlayers = async (usernames: string[], isWinner: boolean): Promise<RatingPlayer[]> =>
         Promise.all(usernames.map(async (username): Promise<RatingPlayer> => {
-            const user = await User.findOne({ username });
+            const user = await User.findOne({ username, isDeleted: { $ne: true } });
             const sessionPlayer = findSessionPlayer(session, username);
             return {
                 username,
@@ -391,7 +391,7 @@ export const startSession: RequestHandler<ParamsDictionary, unknown, StartSessio
         await Session.updateMany({ adminId: req.user.id, isActive: true }, { $set: { isActive: false } });
 
         const playerObjects = await Promise.all(nameArray.map(async (name): Promise<SessionPlayer> => {
-            const user = await User.findOne({ username: name });
+            const user = await User.findOne({ username: name, isDeleted: { $ne: true } });
             return {
                 username: name,
                 isGuest: !user,

@@ -31,7 +31,7 @@ router.use(authMiddleware, organiserMiddleware);
 
 router.get('/players', async (req, res) => {
     try {
-        const players = await User.find({ $or: [{ role: 'player' }, { role: { $exists: false } }] })
+        const players = await User.find({ isDeleted: { $ne: true }, $or: [{ role: 'player' }, { role: { $exists: false } }] })
             .select('username age level rating')
             .sort({ username: 1 })
             .lean();
@@ -66,7 +66,7 @@ router.get('/player-stats', async (req, res) => {
                     .map((player) => player.username)
             )
         );
-        const accounts = await User.find({ username: { $in: [...registeredPlayerNames] } })
+        const accounts = await User.find({ username: { $in: [...registeredPlayerNames] }, isDeleted: { $ne: true } })
             .select('username rating matchHistory')
             .lean();
         const accountRatings = new Map(accounts.map((account) => [account.username, account.rating]));
@@ -350,7 +350,7 @@ router.post('/sessions/:id/start', async (req, res) => {
             }
             seenNames.add(username.toLowerCase());
 
-            const user = player.kind === 'account' ? await User.findOne({ username }) : null;
+            const user = player.kind === 'account' ? await User.findOne({ username, isDeleted: { $ne: true } }) : null;
             if (player.kind === 'account' && !user) {
                 res.status(404).json({ error: `Account "${username}" was not found` });
                 return;
@@ -427,7 +427,7 @@ router.post('/sessions/:id/players', async (req, res) => {
             res.status(409).json({ error: 'Player is already in this session' });
             return;
         }
-        const user = kind === 'account' ? await User.findOne({ username }) : null;
+        const user = kind === 'account' ? await User.findOne({ username, isDeleted: { $ne: true } }) : null;
         if (kind === 'account' && !user) {
             res.status(404).json({ error: 'Player account not found' });
             return;

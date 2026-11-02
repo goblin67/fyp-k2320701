@@ -85,7 +85,7 @@ const login: RequestHandler<Record<string, never>, AuthResponse, LoginRequest> =
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username });
-        if (user && await bcrypt.compare(password, user.password)) {
+        if (user && !user.isDeleted && await bcrypt.compare(password, user.password)) {
             const secret = process.env.JWT_SECRET;
             if (!secret) {
                 res.status(500).json({ error: 'JWT secret is not configured' });

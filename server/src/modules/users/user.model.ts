@@ -14,6 +14,7 @@ export interface UserRecord {
   password: string;
   role: 'player' | 'organiser';
   organiserAccess: boolean;
+  isDeleted?: boolean;
   age?: number;
   level?: string;
   rating: number;
@@ -38,6 +39,7 @@ const userSchema = new Schema<UserRecord>({
   password: { type: String, required: true },
   role: { type: String, enum: ['player', 'organiser'], default: 'player' },
   organiserAccess: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
   age: Number,
   level: String,
   rating: { type: Number, default: 1500 },
