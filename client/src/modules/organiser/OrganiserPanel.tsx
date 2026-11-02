@@ -69,6 +69,24 @@ const toLocalDateTime = (date?: string | Date): string => {
 
 const toIsoDateTime = (value: string): string => new Date(value).toISOString();
 
+const formatSessionSchedule = (scheduledAt?: string | Date, endsAt?: string | Date): string => {
+    if (!scheduledAt) return 'Date not set';
+    const start = new Date(scheduledAt);
+    if (Number.isNaN(start.getTime())) return 'Date not set';
+
+    const date = start.toLocaleDateString();
+    const formatTime = (value: Date) => value.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23'
+    });
+    if (!endsAt) return `${date} · ${formatTime(start)}`;
+
+    const end = new Date(endsAt);
+    if (Number.isNaN(end.getTime())) return `${date} · ${formatTime(start)}`;
+    return `${date} · ${formatTime(start)}-${formatTime(end)}`;
+};
+
 const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 
@@ -666,7 +684,7 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                                 }}>
                                     <span>
                                         <strong>{session.title}</strong>
-                                        <small>{session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Date not set'}{session.venue ? ` · ${session.venue}` : ''}</small>
+                                        <small>{formatSessionSchedule(session.scheduledAt, session.endsAt)}{session.venue ? ` · ${session.venue}` : ''}</small>
                                     </span>
                                     <span className={`organiser-status status-${statusOf(session)}`}>{statusOf(session)}</span>
                                 </button>
@@ -683,11 +701,10 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                         <div>
                             <span className="organiser-eyebrow">{statusOf(selectedSession).toUpperCase()} SESSION</span>
                             <h2>{selectedSession.title}</h2>
-                            <p>{selectedSession.scheduledAt ? new Date(selectedSession.scheduledAt).toLocaleString() : 'Date not set'}{selectedSession.venue ? ` · ${selectedSession.venue}` : ''}</p>
+                            <p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)}{selectedSession.venue ? ` · ${selectedSession.venue}` : ''}</p>
                         </div>
                         <span className={`organiser-status status-${statusOf(selectedSession)}`}>{statusOf(selectedSession)}</span>
                     </div>
-                    {selectedSession.endsAt && <p className="organiser-detail-line"><strong>Ends:</strong> {new Date(selectedSession.endsAt).toLocaleString()}</p>}
                     <p className="organiser-detail-line"><strong>Players:</strong> {selectedSession.players.length} · <strong>Matches:</strong> {selectedSession.matches.length}</p>
                     {statusOf(selectedSession) === 'scheduled' && (
                         <div className="organiser-actions">
@@ -812,7 +829,7 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                 <section className="organiser-card">
                     <button className="organiser-back" type="button" onClick={() => setScreen('sessions')}>← All sessions</button>
                     <div className="organiser-section-heading">
-                        <div><span className="organiser-eyebrow">LIVE SESSION</span><h2>{selectedSession.title}</h2><p>{selectedSession.scheduledAt ? new Date(selectedSession.scheduledAt).toLocaleString() : ''}</p></div>
+                        <div><span className="organiser-eyebrow">LIVE SESSION</span><h2>{selectedSession.title}</h2><p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)}</p></div>
                         <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
                     </div>
                     <div className="organiser-court-grid live">
@@ -995,7 +1012,7 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                 <section className="organiser-card">
                     <button className="organiser-back" type="button" onClick={() => setScreen('sessions')}>← All sessions</button>
                     <div className="organiser-section-heading">
-                        <div><span className="organiser-eyebrow">SESSION SUMMARY</span><h2>{selectedSession.title}</h2><p>{selectedSession.scheduledAt ? new Date(selectedSession.scheduledAt).toLocaleString() : ''} · {selectedSession.matches.filter((match) => match.status === 'finished').length} completed matches</p></div>
+                        <div><span className="organiser-eyebrow">SESSION SUMMARY</span><h2>{selectedSession.title}</h2><p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)} · {selectedSession.matches.filter((match) => match.status === 'finished').length} completed matches</p></div>
                         <button className="organiser-button" type="button" onClick={() => downloadSessionCsv(selectedSession)}>Download CSV</button>
                     </div>
                     <section className="organiser-subcard">
