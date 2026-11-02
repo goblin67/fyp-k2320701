@@ -8,10 +8,6 @@ Organisers can schedule sessions, choose court formats, add registered players o
 
 The organiser panel also includes Player Stats: registered players from that organiser's sessions are ranked by current ELO, with an export for the leaderboard and a separate lifetime match-history export for each player. Guest records remain session-only.
 
-## Organiser access
-
-Organiser-only accounts use the organiser panel directly. To give an existing player account access while keeping its player dashboard, set `ORGANISER_ACCESS_USERNAME` and `ORGANISER_ACCESS_PASSWORD` in the server environment and run `npm run grant-organiser-access` from `server`. The script verifies the existing account password and does not change it. Log out and back in after access is granted.
-
 ## How player pairing works
 
 Waiting players are prioritised by how long they have been in the queue. For doubles, the app tries to avoid repeating teammate pairings from the last three completed matches and rearranges players onto different sides when possible.
