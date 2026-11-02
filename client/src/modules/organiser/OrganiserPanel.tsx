@@ -119,6 +119,27 @@ const formatSessionSchedule = (scheduledAt?: string | Date, endsAt?: string | Da
     return `${date} · ${formatTime(start)}-${formatTime(end)}`;
 };
 
+const formatElapsedDuration = (start: string | Date | number | undefined, now: number): string => {
+    if (start === undefined || start === 0 || !now) return '00:00';
+    const startTime = typeof start === 'number' ? start : new Date(start).getTime();
+    if (!Number.isFinite(startTime)) return '00:00';
+
+    const elapsedSeconds = Math.max(0, Math.floor((now - startTime) / 1000));
+    const hours = Math.floor(elapsedSeconds / 3600);
+    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+    const seconds = elapsedSeconds % 60;
+    return hours > 0
+        ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+const getSessionStartTime = (session: SessionData): number | undefined => {
+    const matchStartTimes = session.matches
+        .map((match) => match.startTime ? new Date(match.startTime).getTime() : Number.NaN)
+        .filter(Number.isFinite);
+    return matchStartTimes.length ? Math.min(...matchStartTimes) : undefined;
+};
+
 const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 
@@ -479,6 +500,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [lineupEdits, setLineupEdits] = useState<Record<string, MatchLineup>>({});
     const [scoreEdits, setScoreEdits] = useState<Record<string, { team1: string; team2: string }>>({});
     const [winnerEdits, setWinnerEdits] = useState<Record<string, 'team1' | 'team2'>>({});
+    const [clockNow, setClockNow] = useState(0);
+    const [liveSessionStartedAt, setLiveSessionStartedAt] = useState<Record<string, number>>({});
 
     useEffect(() => {
         let cancelled = false;
@@ -503,6 +526,12 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             cancelled = true;
         };
     }, []);
+
+    useEffect(() => {
+        if (screen !== 'live') return;
+        const interval = window.setInterval(() => setClockNow(Date.now()), 1000);
+        return () => window.clearInterval(interval);
+    }, [screen]);
 
     const upsertSession = (updated: SessionData) => {
         setSelectedSession(updated);
@@ -656,6 +685,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 method: 'POST',
                 body: JSON.stringify({ players: selectedPlayers, courtFormats })
             });
+            setLiveSessionStartedAt((current) => ({ ...current, [updated._id]: Date.now() }));
             upsertSession(updated);
             setScreen('live');
         } catch (requestError) {
@@ -834,6 +864,10 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         [match.player1, match.player2, match.player3, match.player4].filter((name): name is string => Boolean(name))
     ));
     const waitingPlayers = selectedSession?.players.filter((player) => !playingNames.has(player.username)) ?? [];
+    const sessionStartedAt = selectedSession
+        ? liveSessionStartedAt[selectedSession._id] ?? getSessionStartTime(selectedSession) ?? 0
+        : 0;
+    const sessionDuration = formatElapsedDuration(sessionStartedAt, clockNow);
     const sessionTotals = selectedSession ? getSessionTotals(selectedSession) : [];
     const courts = selectedSession?.courtFormats?.length
         ? selectedSession.courtFormats
@@ -1007,7 +1041,13 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             {sessions.map((session) => (
                                 <button className="organiser-session-row" key={session._id} type="button" onClick={() => {
                                     setSelectedSession(session);
-                                    setScreen(statusOf(session) === 'active' ? 'live' : statusOf(session) === 'completed' ? 'summary' : 'details');
+                                    const sessionStatus = statusOf(session);
+                                    if (sessionStatus === 'active') {
+                                        setLiveSessionStartedAt((current) => current[session._id]
+                                            ? current
+                                            : { ...current, [session._id]: getSessionStartTime(session) ?? Date.now() });
+                                    }
+                                    setScreen(sessionStatus === 'active' ? 'live' : sessionStatus === 'completed' ? 'summary' : 'details');
                                 }}>
                                     <span>
                                         <strong>{session.title}</strong>
@@ -1156,7 +1196,15 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 <section className="organiser-card">
                     <button className="organiser-back" type="button" onClick={() => setScreen('sessions')}>← All sessions</button>
                     <div className="organiser-section-heading">
-                        <div><span className="organiser-eyebrow">LIVE SESSION</span><h2>{selectedSession.title}</h2><p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)}</p></div>
+                        <div>
+                            <div className="organiser-live-indicator" role="status" aria-label={`Live session, elapsed ${sessionDuration}`}>
+                                <span className="organiser-live-dot" aria-hidden="true" />
+                                <span className="organiser-eyebrow">LIVE SESSION</span>
+                                <time className="organiser-elapsed-time">{sessionDuration}</time>
+                            </div>
+                            <h2>{selectedSession.title}</h2>
+                            <p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)}</p>
+                        </div>
                         <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
                     </div>
                     <div className="organiser-court-grid live">
@@ -1190,21 +1238,28 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                                     : 'Review or edit the lineup, then approve to start.'}</span>
                                             </div>
                                         ) : (
-                                            <div className="organiser-score-entry">
-                                                <label>{team1} points
-                                                    <input type="number" min="0" step="1" value={score.team1} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team1: event.target.value } }))} />
-                                                </label>
-                                                <label>{team2} points
-                                                    <input type="number" min="0" step="1" value={score.team2} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team2: event.target.value } }))} />
-                                                </label>
-                                                <label className="organiser-winner-select">Winning side
-                                                    <select value={winnerTeam} onChange={(event) => setWinnerEdits((current) => ({ ...current, [match.matchId]: event.target.value as 'team1' | 'team2' }))}>
-                                                        <option value="">Select winner</option>
-                                                        <option value="team1">{team1}</option>
-                                                        <option value="team2">{team2}</option>
-                                                    </select>
-                                                </label>
-                                            </div>
+                                            <>
+                                                <div className="organiser-match-elapsed">
+                                                    <span className="organiser-match-live-dot" aria-hidden="true" />
+                                                    <span>Match live</span>
+                                                    <time>{formatElapsedDuration(match.startTime ?? sessionStartedAt, clockNow)}</time>
+                                                </div>
+                                                <div className="organiser-score-entry">
+                                                    <label>{team1} points
+                                                        <input type="number" min="0" step="1" value={score.team1} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team1: event.target.value } }))} />
+                                                    </label>
+                                                    <label>{team2} points
+                                                        <input type="number" min="0" step="1" value={score.team2} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team2: event.target.value } }))} />
+                                                    </label>
+                                                    <label className="organiser-winner-select">Winning side
+                                                        <select value={winnerTeam} onChange={(event) => setWinnerEdits((current) => ({ ...current, [match.matchId]: event.target.value as 'team1' | 'team2' }))}>
+                                                            <option value="">Select winner</option>
+                                                            <option value="team1">{team1}</option>
+                                                            <option value="team2">{team2}</option>
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                            </>
                                         )}
                                         <details className="organiser-lineup-editor">
                                             <summary>{match.status === 'proposed' ? 'Edit proposed players' : 'Edit or remove players'}</summary>
@@ -1265,6 +1320,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 {waitingPlayers.map((player) => (
                                     <div className="organiser-roster-row" key={player.username}>
                                         <span><strong>{player.username}</strong><small>Waiting for a court matching {player.preferredFormat ?? 'their preference'}</small></span>
+                                        <time className="organiser-queue-timer">{formatElapsedDuration(player.joinedAt ?? sessionStartedAt, clockNow)}</time>
                                     </div>
                                 ))}
                             </div>
