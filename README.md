@@ -14,6 +14,11 @@ Waiting players are prioritised by how long they have been in the queue. For dou
 
 If a fresh pairing may become possible when an ongoing match ends, the proposal waits for that match to finish. If no eligible ongoing match can release players, the app uses the best available lineup instead of blocking play. Organisers can also edit a proposed lineup manually.
 
+
+## Access
+https://courtsync-ebsd.onrender.com
+Email miscellaneousaffairs21@gmail.com for an organiser account
+
 ## Development
 
 Install dependencies in the `client` and `server` folders, configure the server environment, then run each app using its development script.
