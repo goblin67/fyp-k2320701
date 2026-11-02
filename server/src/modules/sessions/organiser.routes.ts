@@ -67,9 +67,14 @@ router.get('/player-stats', async (req, res) => {
             )
         );
         const accounts = await User.find({ username: { $in: [...registeredPlayerNames] } })
-            .select('username rating')
+            .select('username rating matchHistory')
             .lean();
         const accountRatings = new Map(accounts.map((account) => [account.username, account.rating]));
+        const accountMatchHistories = new Map(accounts.map((account) => [
+            account.username,
+            account.matchHistory.map((entry, index) => ({ ...entry, index }))
+        ]));
+        const usedHistoryEntries = new Map<string, Set<number>>();
         const playerStats = new Map([...registeredPlayerNames].map((username) => [
             username,
             {
@@ -92,6 +97,8 @@ router.get('/player-stats', async (req, res) => {
                     pointsFor: number;
                     pointsAgainst: number;
                     won: boolean;
+                    eloBefore?: number;
+                    eloAfter?: number;
                 }[]
             }
         ]));
@@ -130,6 +137,28 @@ router.get('/player-stats', async (req, res) => {
                         if (!registeredInSession.has(username)) continue;
                         const stats = playerStats.get(username);
                         if (!stats) continue;
+                        const history = accountMatchHistories.get(username) ?? [];
+                        const usedEntries = usedHistoryEntries.get(username) ?? new Set<number>();
+                        const expectedOpponent = team.opponents.join(' & ');
+                        const matchDate = match.finishedAt ?? match.startTime;
+                        const matchingHistory = matchDate
+                            ? history
+                                .filter((entry) =>
+                                    !usedEntries.has(entry.index) &&
+                                    entry.opponent === expectedOpponent &&
+                                    entry.isWin === team.won
+                                )
+                                .map((entry) => ({
+                                    entry,
+                                    distance: Math.abs(new Date(entry.matchDate).getTime() - new Date(matchDate).getTime())
+                                }))
+                                .filter((candidate) => candidate.distance <= 10 * 60 * 1000)
+                                .sort((a, b) => a.distance - b.distance)[0]?.entry
+                            : undefined;
+                        if (matchingHistory) {
+                            usedEntries.add(matchingHistory.index);
+                            usedHistoryEntries.set(username, usedEntries);
+                        }
                         stats.games += 1;
                         if (team.won) stats.wins += 1;
                         stats.pointsFor += team.pointsFor;
@@ -146,7 +175,11 @@ router.get('/player-stats', async (req, res) => {
                             opponents: team.opponents.join(' & '),
                             pointsFor: team.pointsFor,
                             pointsAgainst: team.pointsAgainst,
-                            won: team.won
+                            won: team.won,
+                            ...(matchingHistory ? {
+                                eloBefore: matchingHistory.eloBefore,
+                                eloAfter: matchingHistory.eloAfter
+                            } : {})
                         });
                     }
                 }
@@ -160,7 +193,8 @@ router.get('/player-stats', async (req, res) => {
                 winRate: stats.games ? Math.round((stats.wins / stats.games) * 100) : 0,
                 pointDifference: stats.pointsFor - stats.pointsAgainst,
                 matches: stats.matches.sort((a, b) =>
-                    new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
+                    new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime() ||
+                    a.matchId.localeCompare(b.matchId)
                 )
             }))
             .filter((stats) => stats.games > 0)

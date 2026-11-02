@@ -27,6 +27,8 @@ interface PlayerLifetimeMatch {
     pointsFor: number;
     pointsAgainst: number;
     won: boolean;
+    eloBefore?: number;
+    eloAfter?: number;
 }
 
 interface OrganiserPlayerStats {
@@ -312,40 +314,45 @@ const downloadPlayerStatsCsv = (players: OrganiserPlayerStats[]) => {
 
 const downloadPlayerLifetimeCsv = (player: OrganiserPlayerStats) => {
     const rows: (string | number)[][] = [[
-        'Player', 'ELO', 'Career games', 'Career wins', 'Career losses', 'Win rate',
+        'Player', 'Current ELO', 'Career games', 'Career wins', 'Career losses', 'Win rate',
         'Lifetime points scored', 'Lifetime points conceded', 'Point difference',
         'Session', 'Date', 'Match ID', 'Format', 'Court', 'Side', 'Teammates', 'Opponents',
-        'Points scored', 'Points conceded', 'Result'
+        'Points scored', 'Points conceded', 'Result', 'ELO before match', 'ELO after match'
     ]];
     if (!player.matches.length) {
         rows.push([
             player.username, player.rating, player.games, player.wins, player.losses, `${player.winRate}%`,
             player.pointsFor, player.pointsAgainst, player.pointDifference,
-            '', '', '', '', '', '', '', '', '', '', ''
+            '', '', '', '', '', '', '', '', '', '', '', ''
         ]);
     } else {
-        player.matches.forEach((match) => rows.push([
-            player.username,
-            player.rating,
-            player.games,
-            player.wins,
-            player.losses,
-            `${player.winRate}%`,
-            player.pointsFor,
-            player.pointsAgainst,
-            player.pointDifference,
-            match.sessionTitle,
-            match.date ? new Date(match.date).toISOString() : '',
-            match.matchId,
-            match.isDoubles ? 'Doubles' : 'Singles',
-            match.court,
-            match.side,
-            match.teammates,
-            match.opponents,
-            match.pointsFor,
-            match.pointsAgainst,
-            match.won ? 'Win' : 'Loss'
-        ]));
+        player.matches.forEach((match, index) => {
+            const firstMatch = index === 0;
+            rows.push([
+                firstMatch ? player.username : '',
+                firstMatch ? player.rating : '',
+                firstMatch ? player.games : '',
+                firstMatch ? player.wins : '',
+                firstMatch ? player.losses : '',
+                firstMatch ? `${player.winRate}%` : '',
+                firstMatch ? player.pointsFor : '',
+                firstMatch ? player.pointsAgainst : '',
+                firstMatch ? player.pointDifference : '',
+                match.sessionTitle,
+                match.date ? new Date(match.date).toISOString() : '',
+                match.matchId,
+                match.isDoubles ? 'Doubles' : 'Singles',
+                match.court,
+                match.side,
+                match.teammates,
+                match.opponents,
+                match.pointsFor,
+                match.pointsAgainst,
+                match.won ? 'Win' : 'Loss',
+                match.eloBefore ?? '',
+                match.eloAfter ?? ''
+            ]);
+        });
     }
     const safeUsername = player.username.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '') || 'player';
     downloadOrganiserCsv(`${safeUsername}-lifetime-match-history.csv`, rows);
