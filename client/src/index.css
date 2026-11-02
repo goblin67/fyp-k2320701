@@ -1,10 +1,18 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color: #e8edf2;
+  background-color: #080d11;
+  --court-bg: #080d11;
+  --court-panel: #111a20;
+  --court-panel-raised: #172229;
+  --court-border: rgba(190, 215, 222, 0.13);
+  --court-muted: #9aabb2;
+  --court-lime: #c8f169;
+  --court-cyan: #62d7df;
+  --court-red: #ff6d69;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -28,22 +36,26 @@ body,
 
 body {
   display: block;
-  background: radial-gradient(circle at top left, #12131a 0%, #0b0d13 45%, #0f1117 100%);
+  background:
+    radial-gradient(ellipse at 82% 0%, rgba(98, 215, 223, 0.1), transparent 34rem),
+    radial-gradient(ellipse at 0% 50%, rgba(200, 241, 105, 0.045), transparent 32rem),
+    #080d11;
 }
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--court-cyan);
   text-decoration: inherit;
 }
 
 a:hover {
-  color: #535bf2;
+  color: #b6faff;
 }
 
 h1 {
-  font-size: 3.2em;
+  font-size: clamp(2rem, 5vw, 3.2rem);
   line-height: 1.1;
+  letter-spacing: -0.045em;
 }
 
 button,
@@ -54,35 +66,22 @@ textarea {
 }
 
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
+  border-radius: 10px;
+  border: 1px solid var(--court-border);
   padding: 0.6em 1.2em;
   font-weight: 500;
-  background-color: #1a1a1a;
+  color: #edf4f5;
+  background-color: #172229;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
 }
 
 button:hover {
-  border-color: #646cff;
+  border-color: rgba(200, 241, 105, 0.55);
 }
 
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-
-  a:hover {
-    color: #747bff;
-  }
-
-  button {
-    background-color: #f9f9f9;
-  }
+  outline: 2px solid var(--court-lime);
+  outline-offset: 3px;
 }

@@ -1,11 +1,27 @@
 .organiser-shell {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     min-height: 100vh;
     padding: 38px clamp(18px, 5vw, 72px) 64px;
-    color: #eef2ff;
+    color: #e8edf2;
     background:
-        radial-gradient(circle at 85% 4%, rgba(35, 91, 157, 0.2), transparent 28rem),
-        #0d1118;
+        radial-gradient(ellipse at 86% 0%, rgba(98, 215, 223, 0.1), transparent 32rem),
+        linear-gradient(90deg, transparent calc(50% - .5px), rgba(174, 209, 211, 0.035) 50%, transparent calc(50% + .5px)),
+        #080d11;
     font-family: Inter, system-ui, sans-serif;
+}
+
+.organiser-shell::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    content: "";
+    opacity: 0.14;
+    background:
+        linear-gradient(90deg, transparent 24.9%, rgba(174, 209, 211, 0.26) 25%, transparent 25.1%, transparent 74.9%, rgba(174, 209, 211, 0.26) 75%, transparent 75.1%),
+        linear-gradient(0deg, transparent 49.9%, rgba(174, 209, 211, 0.24) 50%, transparent 50.1%);
 }
 
 .organiser-shell * {
@@ -52,7 +68,7 @@
     padding: 11px 22px;
     border: 1px solid transparent;
     border-radius: 11px;
-    color: #b7c5d9;
+    color: #aab9bd;
     background: transparent;
     font: inherit;
     font-weight: 700;
@@ -66,15 +82,15 @@
 }
 
 .organiser-workspace-nav button.active {
-    border-color: #5cc6e9;
-    color: #06121b;
-    background: linear-gradient(135deg, #72d7fa, #59b8ec);
+    border-color: #c8f169;
+    color: #101914;
+    background: #c8f169;
 }
 
 .organiser-topbar p,
 .organiser-section-heading p {
     margin: 0;
-    color: #a7b3c9;
+    color: #9aabb2;
 }
 
 .organiser-eyebrow {
@@ -92,10 +108,10 @@
     max-width: 1200px;
     margin: 0 auto 24px;
     padding: clamp(20px, 3vw, 34px);
-    border: 1px solid #293445;
-    border-radius: 22px;
-    background: rgba(19, 26, 37, 0.94);
-    box-shadow: 0 22px 65px rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(190, 215, 222, 0.14);
+    border-radius: 17px;
+    background: rgba(15, 23, 28, 0.94);
+    box-shadow: 0 22px 65px rgba(0, 0, 0, 0.28);
 }
 
 .organiser-section-heading {
@@ -109,10 +125,10 @@
 .organiser-button {
     min-height: 42px;
     padding: 10px 17px;
-    border: 1px solid #5cc6e9;
+    border: 1px solid #c8f169;
     border-radius: 12px;
-    color: #06121b;
-    background: linear-gradient(135deg, #72d7fa, #59b8ec);
+    color: #101914;
+    background: #c8f169;
     font: inherit;
     font-weight: 750;
     cursor: pointer;
@@ -130,9 +146,9 @@
 }
 
 .organiser-button.secondary {
-    color: #dce8f8;
-    border-color: #3a4b61;
-    background: #1b2533;
+    color: #dce8e9;
+    border-color: rgba(190, 215, 222, 0.18);
+    background: #172229;
 }
 
 .organiser-button.danger {
@@ -174,10 +190,10 @@
     gap: 16px;
     width: 100%;
     padding: 17px 19px;
-    border: 1px solid #2c394b;
+    border: 1px solid rgba(190, 215, 222, 0.13);
     border-radius: 14px;
     color: inherit;
-    background: #111925;
+    background: #111a20;
     text-align: left;
     cursor: pointer;
 }
@@ -715,4 +731,94 @@
     .organiser-actions > .organiser-button {
         flex-basis: 100%;
     }
+}
+
+.organiser-shell .organiser-eyebrow,
+.organiser-shell .organiser-text-button,
+.organiser-shell .organiser-back,
+.organiser-lineup-editor summary {
+    color: #62d7df;
+}
+
+.organiser-shell .organiser-card,
+.organiser-shell .organiser-subcard,
+.organiser-shell .organiser-match-controls {
+    border-color: rgba(190, 215, 222, 0.13);
+    background-color: #111a20;
+}
+
+.organiser-shell .organiser-button {
+    border-color: #c8f169;
+    color: #101914;
+    background: #c8f169;
+}
+
+.organiser-shell .organiser-button.secondary {
+    border-color: rgba(190, 215, 222, 0.18);
+    color: #dce8e9;
+    background: #172229;
+}
+
+.organiser-shell .organiser-button.danger {
+    border-color: rgba(255, 109, 105, 0.48);
+    color: #fff;
+    background: #9c393b;
+}
+
+.organiser-shell .organiser-workspace-nav button.active {
+    border-color: #c8f169;
+    color: #101914;
+    background: #c8f169;
+}
+
+.organiser-shell .organiser-session-row,
+.organiser-shell .organiser-roster-row,
+.organiser-shell .organiser-summary-match {
+    border-color: rgba(190, 215, 222, 0.12);
+    background: #111a20;
+}
+
+.organiser-shell .organiser-form input,
+.organiser-shell .organiser-form select,
+.organiser-shell .organiser-court-setup select,
+.organiser-shell .organiser-player-option select,
+.organiser-shell .organiser-court-count,
+.organiser-shell .organiser-score-entry input,
+.organiser-shell .organiser-score-entry select,
+.organiser-shell .organiser-lineup-editor select {
+    border-color: rgba(190, 215, 222, 0.17);
+    background: #0b1216;
+}
+
+.organiser-shell .organiser-court {
+    border-color: rgba(98, 215, 223, 0.2);
+    background: linear-gradient(180deg, #172229, #111a20);
+}
+
+.organiser-shell .organiser-court-image {
+    fill: #27392d;
+    stroke: rgba(200, 241, 105, 0.7);
+}
+
+.organiser-shell .organiser-court-image .organiser-court-net {
+    stroke: #c8f169;
+}
+
+.organiser-shell .organiser-proposed-players strong,
+.organiser-shell .organiser-summary-table th {
+    color: #c8f169;
+}
+
+.organiser-shell .organiser-proposed-players > div {
+    background: rgba(98, 215, 223, 0.07);
+}
+
+.organiser-shell .organiser-proposed-players span {
+    overflow-wrap: anywhere;
+}
+
+.organiser-shell .organiser-error {
+    border-color: rgba(255, 109, 105, 0.35);
+    color: #ffaaa7;
+    background: rgba(255, 109, 105, 0.09);
 }

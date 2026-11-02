@@ -430,30 +430,32 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         <div className={dashboardClass} style={dyslexiaMode ? { fontSize: `${fontSizePercent}%` } : {}}>
             <style>
                 {`
-                .dashboard-container { background: #121212; color: #e0e0e0; min-height: 100vh; padding: 40px 20px; font-family: 'Inter', sans-serif; }
-                .dash-card { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 24px; max-width: 900px; margin: 0 auto; }
-                header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-                nav { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 15px; }
-                nav button { background: transparent; color: #888; border: none; padding: 10px 20px; cursor: pointer; font-weight: 600; transition: 0.2s; }
-                nav button.active { color: #fff; border-bottom: 2px solid #4CAF50; }
-                .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(135deg, #1d2b64, #1c92d2); padding: 24px 28px; border-radius: 20px; margin-bottom: 20px; color: #fff; }
+                .dashboard-container { position: relative; isolation: isolate; overflow: hidden; background: radial-gradient(ellipse at 82% 0%, rgba(98,215,223,.09), transparent 34rem), linear-gradient(90deg, transparent calc(50% - .5px), rgba(174,209,211,.035) 50%, transparent calc(50% + .5px)), #080d11; color: #e8edf2; min-height: 100vh; padding: 34px 20px; font-family: Inter, 'Segoe UI', sans-serif; }
+                .dashboard-container::before { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; opacity: .14; background: linear-gradient(90deg, transparent 24.9%, rgba(174,209,211,.26) 25%, transparent 25.1%, transparent 74.9%, rgba(174,209,211,.26) 75%, transparent 75.1%), linear-gradient(0deg, transparent 49.9%, rgba(174,209,211,.24) 50%, transparent 50.1%); }
+                .dash-card { background: rgba(11,17,21,.92); border: 1px solid rgba(190,215,222,.14); border-radius: 20px; padding: 25px; max-width: 1200px; margin: 0 auto; box-shadow: 0 24px 80px rgba(0,0,0,.32); backdrop-filter: blur(12px); }
+                .dash-card > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+                .dash-card > nav { display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 1px solid rgba(190,215,222,.14); padding-bottom: 14px; }
+                .dash-card > nav button { background: #111a20; color: #a4b3b8; border: 1px solid rgba(190,215,222,.1); padding: 10px 16px; cursor: pointer; font-weight: 700; transition: 0.2s; }
+                .dash-card > nav button:hover { color: #edf4f5; background: #19262c; }
+                .dash-card > nav button.active { color: #111910; background: #c8f169; border-color: #c8f169; }
+                .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #c8f169, #62d7df); padding: 24px 28px; border-radius: 16px; margin-bottom: 20px; color: #101914; }
                 .brand { font-size: 1.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
                 .brand strong { font-weight: 800; }
-                .subtext { margin: 6px 0 0; color: rgba(255,255,255,0.85); font-size: 0.95rem; }
+                .subtext { margin: 6px 0 0; color: rgba(16,25,20,0.72); font-size: 0.95rem; font-weight: 600; }
                 .user-slot { display: flex; gap: 18px; align-items: center; }
-                .user-slot .small-label { margin: 0 0 4px; color: rgba(255,255,255,0.7); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.14em; }
+                .user-slot .small-label { margin: 0 0 4px; color: rgba(16,25,20,0.65); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.14em; }
                 .top-tabs { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-                .top-tabs button { background: #171a20; color: #b5b8c7; border: 1px solid transparent; border-radius: 999px; padding: 12px 20px; transition: all 0.2s ease; }
-                .top-tabs button.active { background: #2f7be5; color: #fff; border-color: rgba(75,154,255,0.35); }
-                .top-tabs .beta-unlock { display: inline-flex; align-items: center; background: #171a20; color: #b5b8c7; border: 1px solid #496cad; border-radius: 999px; padding: 12px 20px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; }
-                .top-tabs .beta-unlock:hover { background: #24395a; color: #fff; }
+                .top-tabs button { background: #111a20; color: #aab9bd; border: 1px solid rgba(190,215,222,.12); border-radius: 9px; padding: 11px 15px; transition: all 0.2s ease; }
+                .top-tabs button.active { background: #c8f169; color: #101914; border-color: #c8f169; }
+                .top-tabs .beta-unlock { display: inline-flex; align-items: center; background: #111a20; color: #c8f169; border: 1px solid rgba(200,241,105,.4); border-radius: 9px; padding: 11px 15px; font-weight: 700; text-decoration: none; transition: all 0.2s ease; }
+                .top-tabs .beta-unlock:hover { background: #202d25; color: #e5ffad; }
                 .beta-access-note { margin: -8px 0 20px; color: #b5b8c7; font-size: 0.9rem; }
                 .beta-access-note a { color: #8db7ff; }
-                .beta-request-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; padding: 22px 24px; background: #161a22; border: 1px solid rgba(75,154,255,0.28); border-radius: 18px; }
+                .beta-request-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; padding: 22px 24px; background: #111a20; border: 1px solid rgba(98,215,223,.25); border-radius: 14px; }
                 .beta-request-card h3 { margin: 0 0 8px; }
-                .beta-request-card p { margin: 0; color: #b5b8c7; line-height: 1.6; }
-                .beta-request-card a { color: #8db7ff; }
-                .beta-request-card .beta-unlock { flex: 0 0 auto; padding: 12px 20px; border-radius: 999px; background: #2f7be5; color: #fff; font-weight: 600; text-decoration: none; }
+                .beta-request-card p { margin: 0; color: #aab9bd; line-height: 1.6; }
+                .beta-request-card a { color: #62d7df; }
+                .beta-request-card .beta-unlock { flex: 0 0 auto; padding: 12px 20px; border-radius: 9px; background: #c8f169; color: #101914; font-weight: 800; text-decoration: none; }
                 .dyslexia-mode .beta-request-card { background: #132032; border-color: rgba(169,198,255,0.45); }
                 .dyslexia-mode .beta-request-card p { color: #e9f0ff; }
                 .dyslexia-mode .beta-request-card a { color: #a9c6ff; }
@@ -468,13 +470,13 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .dyslexia-mode .dash-card, .dyslexia-mode .settings-card { border-color: #2c6bec; }
                 .dyslexia-mode .summary-card, .dyslexia-mode .profile-card, .dyslexia-mode .settings-card { background: #132032; }
                 .dyslexia-mode .settings-preview { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
-                .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(135deg, #3e70d1, #22c1c3); padding: 26px 30px; border-radius: 22px; margin-bottom: 20px; box-shadow: 0 20px 55px rgba(0, 0, 0, 0.18); }
-                .hero-card h2 { margin: 0; font-size: 2rem; letter-spacing: 0.02em; }
-                .hero-card p { margin: 10px 0 0; color: rgba(255,255,255,0.92); }
+                .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(112deg, #18262b, #142126); border: 1px solid rgba(98,215,223,.22); padding: 26px 30px; border-radius: 15px; margin-bottom: 20px; box-shadow: inset 3px 0 #c8f169; }
+                .hero-card h2 { margin: 0; color: #f0f6f5; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.02em; }
+                .hero-card p { margin: 10px 0 0; color: #aab9bd; }
                 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px; }
-                .summary-card { background: #161a22; border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; padding: 24px; }
-                .summary-card span { display: block; color: #a9c6ff; font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
-                .summary-card strong { display: block; color: #fff; font-size: 2rem; }
+                .summary-card { background: #111a20; border: 1px solid rgba(190,215,222,.12); border-radius: 13px; padding: 21px; }
+                .summary-card span { display: block; color: #9aabb2; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+                .summary-card strong { display: block; color: #c8f169; font-size: 2rem; }
                 .settings-card { background: #1f232d; border: 1px solid #333; border-radius: 20px; padding: 28px; margin: 0 auto 24px; max-width: 760px; }
                 .settings-card h4 { margin: 0 0 14px; color: #fff; font-size: 1.05rem; letter-spacing: 0.04em; }
                 .settings-card p { margin: 0; color: #c2d1ff; }
@@ -562,6 +564,25 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     .settings-range { gap: 8px; }
                     .settings-value { min-width: 46px; }
                 }
+                .dashboard-container h3 { color: #eef4f3; letter-spacing: -0.02em; }
+                .summary-card, .profile-card, .settings-card, .match-card, .recent-match, .summary-pill { border-color: rgba(190,215,222,.12); background-color: #111a20; }
+                .profile-card h4, .settings-card h4, .recent-match strong, .summary-pill strong { color: #eef4f3; }
+                .profile-line { color: #aab9bd; border-color: rgba(190,215,222,.1); }
+                .profile-line strong, .match-title, .player-name { color: #c8f169; }
+                .summary-pill span, .summary-card span { color: #9aabb2; }
+                .leaderboard-table th { background: #19272c; color: #c8f169; border-bottom: 1px solid rgba(200,241,105,.35); }
+                .leaderboard-table td { border-color: rgba(190,215,222,.1); }
+                .leaderboard-row:nth-child(odd) { background: rgba(190,215,222,.035); }
+                .achievement-pill { background: rgba(98,215,223,.1); color: #a8e9eb; }
+                .settings-option, .settings-preview { background: #0b1216; border-color: rgba(190,215,222,.12); }
+                .settings-label, .settings-meta { color: #62d7df; }
+                .settings-range input { accent-color: #c8f169; }
+                .toggle-pill.active { background: #c8f169; }
+                .btn-primary { background: #c8f169; color: #101914; }
+                .logout-btn { background: #111a20; color: #ff8c86; border-color: rgba(255,109,105,.3); }
+                .error-banner { background: rgba(255,109,105,.09); border-color: rgba(255,109,105,.34); color: #ffaaa7; }
+                .dyslexia-mode { background-color: #080d11; color: #fff; }
+                .dyslexia-mode .dash-card, .dyslexia-mode .summary-card, .dyslexia-mode .profile-card, .dyslexia-mode .settings-card { background: #111a20; border-color: rgba(200,241,105,.45); }
                 `}
             </style>
 
