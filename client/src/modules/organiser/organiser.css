@@ -711,6 +711,16 @@
     background: rgba(127, 36, 51, 0.22);
 }
 
+.organiser-success {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    padding: 12px 15px;
+    border: 1px solid #32644c;
+    border-radius: 8px;
+    color: #b6f0cb;
+    background: rgba(43, 125, 79, 0.15);
+}
+
 @media (max-width: 760px) {
     .organiser-shell {
         padding: 24px 12px 40px;

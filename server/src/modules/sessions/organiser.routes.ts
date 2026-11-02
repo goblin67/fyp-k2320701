@@ -54,6 +54,26 @@ router.get('/sessions', async (req, res) => {
     }
 });
 
+router.delete('/sessions/:id', async (req, res) => {
+    try {
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        if (session.isActive || (session.status !== 'completed' && session.status !== undefined)) {
+            res.status(409).json({ error: 'Only completed sessions can be deleted' });
+            return;
+        }
+
+        await session.deleteOne();
+        res.json({ message: 'Completed session deleted. Player lifetime records were preserved.' });
+    } catch (error) {
+        console.error('ORGANISER SESSION DELETE ERROR:', error);
+        res.status(500).json({ error: 'Could not delete session' });
+    }
+});
+
 router.get('/player-stats', async (req, res) => {
     try {
         const sessions = await Session.find({ adminId: req.user.id })

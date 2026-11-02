@@ -497,6 +497,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
     const [lineupEdits, setLineupEdits] = useState<Record<string, MatchLineup>>({});
     const [scoreEdits, setScoreEdits] = useState<Record<string, { team1: string; team2: string }>>({});
     const [winnerEdits, setWinnerEdits] = useState<Record<string, 'team1' | 'team2'>>({});
@@ -771,6 +772,29 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         }
     };
 
+    const deleteCompletedSession = async () => {
+        if (!selectedSession || statusOf(selectedSession) !== 'completed') return;
+        const confirmed = window.confirm(
+            `Delete "${selectedSession.title}" from your session history? Player lifetime ratings and match records will be preserved.`
+        );
+        if (!confirmed) return;
+
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            await apiRequest<{ message: string }>(`/sessions/${selectedSession._id}`, { method: 'DELETE' });
+            setSessions((current) => current.filter((session) => session._id !== selectedSession._id));
+            setSelectedSession(null);
+            setScreen('sessions');
+            setNotice('Completed session deleted. Player lifetime records were preserved.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const saveLineup = async (match: SessionMatch): Promise<SessionData | null> => {
         if (!selectedSession) return null;
         const lineup = lineupEdits[match.matchId] ?? getLineup(match);
@@ -894,6 +918,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             </header>
 
             {error && <div className="organiser-error" role="alert">{error}</div>}
+            {notice && <div className="organiser-success" role="status">{notice}</div>}
 
             <nav className="organiser-workspace-nav" aria-label="Organiser sections" role="tablist">
                 <button
@@ -1082,6 +1107,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     {statusOf(selectedSession) === 'completed' && (
                         <div className="organiser-actions">
                             <button className="organiser-button" type="button" onClick={() => setScreen('summary')}>View session summary</button>
+                            <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteCompletedSession()}>
+                                {busy ? 'Deleting…' : 'Delete completed session'}
+                            </button>
                         </div>
                     )}
                 </section>
@@ -1400,6 +1428,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             <button className="organiser-button secondary" type="button" onClick={() => downloadMatchSummariesCsv(selectedSession)}>Download match summaries CSV</button>
                             <button className="organiser-button" type="button" onClick={() => downloadPlayerPerformancesCsv(selectedSession)}>Download player performances CSV</button>
                             <button className="organiser-button secondary" type="button" onClick={() => downloadSessionRankingsCsv(selectedSession)}>Download session rankings CSV</button>
+                            {statusOf(selectedSession) === 'completed' && (
+                                <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteCompletedSession()}>
+                                    {busy ? 'Deleting…' : 'Delete completed session'}
+                                </button>
+                            )}
                         </div>
                     </div>
                     <section className="organiser-subcard">
