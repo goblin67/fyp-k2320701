@@ -210,8 +210,11 @@ const downloadCsv = (session: SessionData, name: string, rows: (string | number)
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
+    const sessionDate = new Date(session.scheduledAt ?? session.createdAt ?? '');
+    const dateSuffix = Number.isNaN(sessionDate.getTime()) ? 'undated' : sessionDate.toISOString().slice(0, 10);
+    const sessionName = session.title.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '') || 'session';
     link.href = url;
-    link.download = `${session.title.replace(/[^a-z0-9-_]+/gi, '-')}-${name}.csv`;
+    link.download = `${sessionName}-${dateSuffix}-${session._id}-${name}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 };
