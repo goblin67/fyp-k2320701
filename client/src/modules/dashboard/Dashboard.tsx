@@ -33,6 +33,7 @@ const readJson = async <T,>(response: Response): Promise<T> => response.json() a
 const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
     const [showOrganiserPanel, setShowOrganiserPanel] = useState(false);
+    const [showBetaAccess, setShowBetaAccess] = useState(false);
     const [userStats, setUserStats] = useState<UserStats>({ elo: 1500, username: '', matchHistory: [] });
     const [loading, setLoading] = useState(true);
     const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
@@ -451,6 +452,14 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .top-tabs .beta-unlock:hover { background: #24395a; color: #fff; }
                 .beta-access-note { margin: -8px 0 20px; color: #b5b8c7; font-size: 0.9rem; }
                 .beta-access-note a { color: #8db7ff; }
+                .beta-request-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; padding: 22px 24px; background: #161a22; border: 1px solid rgba(75,154,255,0.28); border-radius: 18px; }
+                .beta-request-card h3 { margin: 0 0 8px; }
+                .beta-request-card p { margin: 0; color: #b5b8c7; line-height: 1.6; }
+                .beta-request-card a { color: #8db7ff; }
+                .beta-request-card .beta-unlock { flex: 0 0 auto; padding: 12px 20px; border-radius: 999px; background: #2f7be5; color: #fff; font-weight: 600; text-decoration: none; }
+                .dyslexia-mode .beta-request-card { background: #132032; border-color: rgba(169,198,255,0.45); }
+                .dyslexia-mode .beta-request-card p { color: #e9f0ff; }
+                .dyslexia-mode .beta-request-card a { color: #a9c6ff; }
                 .dyslexia-mode { background: #090b10; color: #f8f8f8; }
                 .dyslexia-mode .dash-card { background: #10151f; border-color: #3d6ff0; }
                 .dyslexia-mode .topbar { background: linear-gradient(135deg, #2545a5, #1a6ad5); }
@@ -574,7 +583,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     {hasOrganiserAccess ? (
                         <button className="beta-unlock" type="button" onClick={() => setShowOrganiserPanel(true)}>Organiser panel</button>
                     ) : (
-                        <a className="beta-unlock" href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">Unlock beta</a>
+                        <button className={`beta-unlock${showBetaAccess ? ' active' : ''}`} type="button" onClick={() => setShowBetaAccess((visible) => !visible)}>Create/Organise Sessions</button>
                     )}
                     <button className={view === 'settings' ? 'active' : ''} onClick={() => {
                         setSelectedSession(null);
@@ -589,7 +598,15 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                         </button>
                     )}
                 </nav>
-                {!hasOrganiserAccess && <p className="beta-access-note">To request session creation beta access, email <a href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">miscellaneousaffairs21@gmail.com</a> with the subject <strong>Session Creation Beta Access Request</strong>.</p>}
+                {!hasOrganiserAccess && showBetaAccess && (
+                    <section className="beta-request-card" aria-label="Session creation beta access">
+                        <div>
+                            <h3>Session creation is in beta</h3>
+                            <p>To request access, email <a href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">miscellaneousaffairs21@gmail.com</a> with the subject <strong>Session Creation Beta Access Request</strong>.</p>
+                        </div>
+                        <a className="beta-unlock" href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">Unlock beta</a>
+                    </section>
+                )}
 
                 <section className="hero-card">
                     <div>
