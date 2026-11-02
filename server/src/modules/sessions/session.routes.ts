@@ -14,10 +14,18 @@ router.get('/me', authMiddleware, async (req, res) => {
             return res.status(401).json({ msg: "Not authorized, user data missing" });
         }
 
-        const user = await User.findById(req.user.id).select('-password');
+        const user = await User.findById(req.user.id).select('username matchHistory');
         if (!user) return res.status(404).json({ msg: "User not found" });
-        
-        res.json(user);
+
+        res.json({
+            username: user.username,
+            matchHistory: user.matchHistory.map(({ opponent, teammate, isWin, matchDate }) => ({
+                opponent,
+                teammate,
+                isWin,
+                matchDate
+            }))
+        });
     } catch (err) {
         console.error("ME Error:", errorMessage(err));
         res.status(500).json({ error: "Server failed to fetch user profile" });
@@ -56,7 +64,7 @@ router.get('/history', authMiddleware, async (req, res) => {
 // Leaderboard: where egos go to die
 router.get('/leaderboard', authMiddleware, async (req, res) => {
     try {
-        const currentUser = await User.findById(req.user.id).select('username rating matchHistory');
+        const currentUser = await User.findById(req.user.id).select('username matchHistory');
         if (!currentUser) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -89,7 +97,7 @@ router.get('/leaderboard', authMiddleware, async (req, res) => {
 
         const usernames = Array.from(sharedUsernames);
         const leaderboardUsers = await User.find({ username: { $in: [...usernames, currentUser.username] } })
-            .select('username rating matchHistory')
+            .select('username matchHistory')
             .lean();
 
         const buildAchievements = (games: number, winRate: number): string[] => {
@@ -107,7 +115,6 @@ router.get('/leaderboard', authMiddleware, async (req, res) => {
             const winRate = games > 0 ? Math.round((wins / games) * 100) : 0;
             return {
                 player: user.username,
-                rating: user.rating || 1500,
                 games,
                 wins,
                 winRate,
@@ -115,7 +122,7 @@ router.get('/leaderboard', authMiddleware, async (req, res) => {
             };
         });
 
-        rows.sort((a, b) => b.rating - a.rating || a.player.localeCompare(b.player));
+        rows.sort((a, b) => b.wins - a.wins || b.winRate - a.winRate || b.games - a.games || a.player.localeCompare(b.player));
         const ranked = rows.map((row, index) => ({ rank: index + 1, ...row }));
 
         res.json(ranked);

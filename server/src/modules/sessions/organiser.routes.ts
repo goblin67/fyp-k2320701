@@ -54,6 +54,126 @@ router.get('/sessions', async (req, res) => {
     }
 });
 
+router.get('/player-stats', async (req, res) => {
+    try {
+        const sessions = await Session.find({ adminId: req.user.id })
+            .select('title scheduledAt players matches')
+            .lean();
+        const registeredPlayerNames = new Set(
+            sessions.flatMap((session) =>
+                session.players
+                    .filter((player) => !player.isGuest)
+                    .map((player) => player.username)
+            )
+        );
+        const accounts = await User.find({ username: { $in: [...registeredPlayerNames] } })
+            .select('username rating')
+            .lean();
+        const accountRatings = new Map(accounts.map((account) => [account.username, account.rating]));
+        const playerStats = new Map([...registeredPlayerNames].map((username) => [
+            username,
+            {
+                username,
+                rating: accountRatings.get(username) ?? 1500,
+                games: 0,
+                wins: 0,
+                pointsFor: 0,
+                pointsAgainst: 0,
+                matches: [] as {
+                    sessionId: string;
+                    sessionTitle: string;
+                    matchId: string;
+                    date: Date | undefined;
+                    court: number;
+                    isDoubles: boolean;
+                    side: string;
+                    teammates: string;
+                    opponents: string;
+                    pointsFor: number;
+                    pointsAgainst: number;
+                    won: boolean;
+                }[]
+            }
+        ]));
+
+        for (const session of sessions) {
+            const registeredInSession = new Set(
+                session.players.filter((player) => !player.isGuest).map((player) => player.username)
+            );
+            for (const match of session.matches) {
+                if (match.status !== 'finished') continue;
+                const isDoubles = Boolean(match.isDoubles);
+                const teams = [
+                    {
+                        side: 'Side 1',
+                        players: (isDoubles ? [match.player1, match.player2] : [match.player1])
+                            .filter((username): username is string => Boolean(username)),
+                        opponents: (isDoubles ? [match.player3, match.player4] : [match.player2])
+                            .filter((username): username is string => Boolean(username)),
+                        pointsFor: match.score.team1,
+                        pointsAgainst: match.score.team2,
+                        won: match.winnerTeam === 'team1' || (!isDoubles && match.winner === match.player1)
+                    },
+                    {
+                        side: 'Side 2',
+                        players: (isDoubles ? [match.player3, match.player4] : [match.player2])
+                            .filter((username): username is string => Boolean(username)),
+                        opponents: (isDoubles ? [match.player1, match.player2] : [match.player1])
+                            .filter((username): username is string => Boolean(username)),
+                        pointsFor: match.score.team2,
+                        pointsAgainst: match.score.team1,
+                        won: match.winnerTeam === 'team2' || (!isDoubles && match.winner === match.player2)
+                    }
+                ];
+                for (const team of teams) {
+                    for (const username of team.players) {
+                        if (!registeredInSession.has(username)) continue;
+                        const stats = playerStats.get(username);
+                        if (!stats) continue;
+                        stats.games += 1;
+                        if (team.won) stats.wins += 1;
+                        stats.pointsFor += team.pointsFor;
+                        stats.pointsAgainst += team.pointsAgainst;
+                        stats.matches.push({
+                            sessionId: session._id.toString(),
+                            sessionTitle: session.title,
+                            matchId: match.matchId,
+                            date: match.finishedAt ?? match.startTime ?? session.scheduledAt,
+                            court: match.court,
+                            isDoubles,
+                            side: team.side,
+                            teammates: team.players.filter((name) => name !== username).join(' & '),
+                            opponents: team.opponents.join(' & '),
+                            pointsFor: team.pointsFor,
+                            pointsAgainst: team.pointsAgainst,
+                            won: team.won
+                        });
+                    }
+                }
+            }
+        }
+
+        const ranked = [...playerStats.values()]
+            .map((stats) => ({
+                ...stats,
+                losses: stats.games - stats.wins,
+                winRate: stats.games ? Math.round((stats.wins / stats.games) * 100) : 0,
+                pointDifference: stats.pointsFor - stats.pointsAgainst,
+                matches: stats.matches.sort((a, b) =>
+                    new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime()
+                )
+            }))
+            .filter((stats) => stats.games > 0)
+            .sort((a, b) => b.rating - a.rating || b.winRate - a.winRate || b.games - a.games || a.username.localeCompare(b.username))
+            .map((stats, index) => ({ rank: index + 1, ...stats }));
+
+        res.json(ranked);
+    } catch (error) {
+        console.error('ORGANISER PLAYER STATS ERROR:', error);
+        res.status(500).json({ error: 'Could not load player stats' });
+    }
+});
+
 router.post('/sessions', async (req, res) => {
     try {
         const { title, scheduledAt, endsAt, venue } = req.body as {

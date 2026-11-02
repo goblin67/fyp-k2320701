@@ -4,7 +4,9 @@ A web app for players and session organisers to manage badminton sessions, court
 
 ## Organising a session
 
-Organisers can schedule sessions, choose court formats, add registered players or guests, and start matches from the waiting queue. Each court shows a proposed lineup for approval. Organisers can edit a lineup before starting a match, enter scores, select the winner, and download CSV reports for match summaries or individual player performances.
+Organisers can schedule sessions, choose court formats, add registered players or guests, and start matches from the waiting queue. Each court shows a proposed lineup for approval. Organisers can edit a lineup before starting a match, enter scores, select the winner, and download ranked session reports.
+
+The organiser panel also includes Player Stats: registered players from that organiser's sessions are ranked by current ELO, with an export for the leaderboard and a separate lifetime match-history export for each player. Guest records remain session-only.
 
 ## Organiser access
 

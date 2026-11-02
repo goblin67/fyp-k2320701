@@ -2,13 +2,10 @@ export interface MatchHistoryEntry {
   opponent: string;
   teammate?: string;
   isWin: boolean;
-  eloBefore: number;
-  eloAfter: number;
   matchDate: string | Date;
 }
 
 export interface UserStats {
-  elo: number;
   username: string;
   matchHistory: MatchHistoryEntry[];
 }
@@ -73,7 +70,6 @@ export interface SessionData {
 export interface LeaderboardRow {
   rank: number;
   player: string;
-  rating: number;
   games: number;
   wins: number;
   winRate: number;

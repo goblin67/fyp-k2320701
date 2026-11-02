@@ -7,7 +7,6 @@ type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderbo
 
 interface UserProfileResponse {
     username: string;
-    rating?: number;
     matchHistory?: MatchHistoryEntry[];
 }
 
@@ -34,7 +33,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
     const [showOrganiserPanel, setShowOrganiserPanel] = useState(false);
     const [showBetaAccess, setShowBetaAccess] = useState(false);
-    const [userStats, setUserStats] = useState<UserStats>({ elo: 1500, username: '', matchHistory: [] });
+    const [userStats, setUserStats] = useState<UserStats>({ username: '', matchHistory: [] });
     const [loading, setLoading] = useState(true);
     const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
     const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -174,7 +173,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             if (userRes.ok) {
                 const userData = await readJson<UserProfileResponse>(userRes);
                 setUserStats({
-                    elo: userData.rating || 1500,
                     username: userData.username || 'User',
                     matchHistory: userData.matchHistory || []
                 });
@@ -435,7 +433,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .dashboard-container { background: #121212; color: #e0e0e0; min-height: 100vh; padding: 40px 20px; font-family: 'Inter', sans-serif; }
                 .dash-card { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 24px; max-width: 900px; margin: 0 auto; }
                 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-                .elo-display { font-size: 2rem; font-weight: 800; color: #4CAF50; }
                 nav { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 15px; }
                 nav button { background: transparent; color: #888; border: none; padding: 10px 20px; cursor: pointer; font-weight: 600; transition: 0.2s; }
                 nav button.active { color: #fff; border-bottom: 2px solid #4CAF50; }
@@ -474,9 +471,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 20px; background: linear-gradient(135deg, #3e70d1, #22c1c3); padding: 26px 30px; border-radius: 22px; margin-bottom: 20px; box-shadow: 0 20px 55px rgba(0, 0, 0, 0.18); }
                 .hero-card h2 { margin: 0; font-size: 2rem; letter-spacing: 0.02em; }
                 .hero-card p { margin: 10px 0 0; color: rgba(255,255,255,0.92); }
-                .rank-badge { background: rgba(255,255,255,0.13); padding: 20px 24px; border-radius: 20px; text-align: center; min-width: 132px; }
-                .rank-badge span { display: block; color: rgba(255,255,255,0.8); font-size: 0.82rem; letter-spacing: 0.16em; text-transform: uppercase; }
-                .rank-badge strong { display: block; margin-top: 10px; font-size: 2.1rem; }
                 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px; }
                 .summary-card { background: #161a22; border: 1px solid rgba(255,255,255,0.06); border-radius: 18px; padding: 24px; }
                 .summary-card span { display: block; color: #a9c6ff; font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
@@ -611,11 +605,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 <section className="hero-card">
                     <div>
                         <h2>WELCOME BACK, {userStats.username.toUpperCase()}</h2>
-                        <p>Your rank in the last session was #{userStats.matchHistory.length > 0 ? 1 : '-'}</p>
-                    </div>
-                    <div className="rank-badge">
-                        <span>RANK</span>
-                        <strong>#{userStats.matchHistory.length > 0 ? 1 : '-'}</strong>
                     </div>
                 </section>
 
@@ -641,11 +630,10 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 {view === 'overview' && (
                     <section>
                         <h3>Performance Overview</h3>
-                        <p style={{ color: '#aaa', marginBottom: '18px' }}>Track your current rating, recent form, and progress without losing sight of your play style.</p>
+                        <p style={{ color: '#aaa', marginBottom: '18px' }}>Track your match results, recent form, and progress without losing sight of your play style.</p>
                         <div className="overview-grid">
                             <div className="profile-card">
                                 <h4>Your Profile</h4>
-                                <div className="profile-line"><span>Current Elo</span><strong>{userStats.elo}</strong></div>
                                 <div className="profile-line"><span>Games Played</span><strong>{totalGames}</strong></div>
                                 <div className="profile-line"><span>Wins</span><strong>{totalWins}</strong></div>
                                 <div className="profile-line"><span>Win Rate</span><strong>{winRate}%</strong></div>
@@ -656,7 +644,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                 {userStats.matchHistory.length > 0 ? (
                                     // Recent form: because who cares about old losses?
                                     userStats.matchHistory.slice().reverse().slice(0, 4).map((m, idx) => {
-                                        const diff = Math.round(m.eloAfter - m.eloBefore);
                                         return (
                                             <div key={idx} className="recent-match">
                                                 <div>
@@ -665,7 +652,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                                 </div>
                                                 <div style={{ textAlign: 'right' }}>
                                                     <span className={m.isWin ? 'text-green' : 'text-red'}>{m.isWin ? 'WIN' : 'LOSS'}</span>
-                                                    <p style={{ margin: '4px 0 0', color: '#ccc' }}>{diff >= 0 ? `+${diff}` : diff}</p>
                                                 </div>
                                             </div>
                                         );
@@ -693,7 +679,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                             <tr>
                                                 <th>Rank</th>
                                                 <th>Player</th>
-                                                <th>Skill Level</th>
                                                 <th>Games</th>
                                                 <th>Wins</th>
                                                 <th>Win Rate</th>
@@ -705,7 +690,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                                 <tr key={`${row.player}-${row.rank}`} className="leaderboard-row">
                                                     <td>{row.rank}</td>
                                                     <td className="player-name">{row.player}</td>
-                                                    <td>{row.rating}</td>
                                                     <td>{row.games}</td>
                                                     <td>{row.wins}</td>
                                                     <td className={row.winRate >= 65 ? 'text-green' : 'text-red'}>{row.winRate}%</td>
@@ -732,10 +716,6 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                         <strong>{winRate}%</strong>
                                     </div>
                                     <div className="summary-pill">
-                                        <span>Top Skill</span>
-                                        <strong>{userStats.elo}</strong>
-                                    </div>
-                                    <div className="summary-pill">
                                         <span>Active Players</span>
                                         <strong>{activeSession?.players?.length || 8}</strong>
                                     </div>
@@ -755,18 +735,15 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                                         <th>Date</th>
                                         <th>Opponent</th>
                                         <th>Result</th>
-                                        <th>Elo Change</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {userStats.matchHistory.slice().reverse().map((m, i) => {
-                                        const diff = Math.round(m.eloAfter - m.eloBefore);
                                         return (
                                             <tr key={i}>
                                                 <td>{new Date(m.matchDate).toLocaleDateString()}</td>
                                                 <td>{m.opponent}</td>
                                                 <td className={m.isWin ? 'text-green' : 'text-red'}>{m.isWin ? 'WIN' : 'LOSS'}</td>
-                                                <td className={diff >= 0 ? 'text-green' : 'text-red'}>{diff >= 0 ? `+${diff}` : diff}</td>
                                             </tr>
                                         );
                                     })}

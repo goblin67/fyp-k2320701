@@ -4,7 +4,7 @@ import './organiser.css';
 
 type Format = 'singles' | 'doubles';
 type PlayerKind = 'account' | 'guest';
-type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary';
+type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary' | 'player-stats';
 type MatchLineup = [string, string, string?, string?];
 
 interface PlayerAccount {
@@ -12,6 +12,35 @@ interface PlayerAccount {
     age?: number;
     level?: string;
     rating: number;
+}
+
+interface PlayerLifetimeMatch {
+    sessionId: string;
+    sessionTitle: string;
+    matchId: string;
+    date?: string | Date;
+    court: number;
+    isDoubles: boolean;
+    side: string;
+    teammates: string;
+    opponents: string;
+    pointsFor: number;
+    pointsAgainst: number;
+    won: boolean;
+}
+
+interface OrganiserPlayerStats {
+    rank: number;
+    username: string;
+    rating: number;
+    games: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    pointsFor: number;
+    pointsAgainst: number;
+    pointDifference: number;
+    matches: PlayerLifetimeMatch[];
 }
 
 interface PlayerSelection {
@@ -178,6 +207,12 @@ interface PlayerSessionTotals {
     pointsAgainst: number;
 }
 
+const compareSessionTotals = (a: PlayerSessionTotals, b: PlayerSessionTotals): number =>
+    b.wins - a.wins ||
+    (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst) ||
+    b.pointsFor - a.pointsFor ||
+    a.username.localeCompare(b.username);
+
 const getSessionTotals = (session: SessionData): PlayerSessionTotals[] => {
     const totals = new Map(session.players.map((player) => [player.username, {
         username: player.username,
@@ -202,7 +237,31 @@ const getSessionTotals = (session: SessionData): PlayerSessionTotals[] => {
             playerTotals.pointsAgainst += onTeam1 ? match.score.team2 : match.score.team1;
         });
     });
-    return [...totals.values()].sort((a, b) => b.pointsFor - a.pointsFor || b.wins - a.wins || a.username.localeCompare(b.username));
+    return [...totals.values()].sort(compareSessionTotals);
+};
+
+const downloadSessionRankingsCsv = (session: SessionData) => {
+    const totals = getSessionTotals(session);
+    const rows: (string | number)[][] = [[
+        'Session rank', 'Player', 'Games', 'Wins', 'Points for', 'Points against', 'Point difference'
+    ]];
+    let rank = 0;
+    let previousPerformance = '';
+    totals.forEach((player, index) => {
+        const performance = `${player.wins}:${player.pointsFor - player.pointsAgainst}:${player.pointsFor}`;
+        if (performance !== previousPerformance) rank = index + 1;
+        rows.push([
+            rank,
+            player.username,
+            player.games,
+            player.wins,
+            player.pointsFor,
+            player.pointsAgainst,
+            player.pointsFor - player.pointsAgainst
+        ]);
+        previousPerformance = performance;
+    });
+    downloadCsv(session, 'session-rankings', rows);
 };
 
 const downloadCsv = (session: SessionData, name: string, rows: (string | number)[][]) => {
@@ -219,38 +278,120 @@ const downloadCsv = (session: SessionData, name: string, rows: (string | number)
     URL.revokeObjectURL(url);
 };
 
-const downloadMatchSummariesCsv = (session: SessionData) => {
+const downloadOrganiserCsv = (filename: string, rows: (string | number)[][]) => {
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+};
+
+const downloadPlayerStatsCsv = (players: OrganiserPlayerStats[]) => {
     const rows: (string | number)[][] = [[
-        'Match ID', 'Date', 'Court', 'Format', 'Side 1 players', 'Side 2 players',
-        'Side 1 points', 'Side 2 points', 'Winner'
+        'Rank', 'Player', 'ELO', 'Games', 'Wins', 'Losses', 'Win rate',
+        'Points scored', 'Points conceded', 'Point difference'
     ]];
+    players.forEach((player) => rows.push([
+        player.rank,
+        player.username,
+        player.rating,
+        player.games,
+        player.wins,
+        player.losses,
+        `${player.winRate}%`,
+        player.pointsFor,
+        player.pointsAgainst,
+        player.pointDifference
+    ]));
+    const date = new Date().toISOString().slice(0, 10);
+    downloadOrganiserCsv(`organiser-player-stats-${date}.csv`, rows);
+};
+
+const downloadPlayerLifetimeCsv = (player: OrganiserPlayerStats) => {
+    const rows: (string | number)[][] = [[
+        'Player', 'ELO', 'Career games', 'Career wins', 'Career losses', 'Win rate',
+        'Lifetime points scored', 'Lifetime points conceded', 'Point difference',
+        'Session', 'Date', 'Match ID', 'Format', 'Court', 'Side', 'Teammates', 'Opponents',
+        'Points scored', 'Points conceded', 'Result'
+    ]];
+    if (!player.matches.length) {
+        rows.push([
+            player.username, player.rating, player.games, player.wins, player.losses, `${player.winRate}%`,
+            player.pointsFor, player.pointsAgainst, player.pointDifference,
+            '', '', '', '', '', '', '', '', '', '', ''
+        ]);
+    } else {
+        player.matches.forEach((match) => rows.push([
+            player.username,
+            player.rating,
+            player.games,
+            player.wins,
+            player.losses,
+            `${player.winRate}%`,
+            player.pointsFor,
+            player.pointsAgainst,
+            player.pointDifference,
+            match.sessionTitle,
+            match.date ? new Date(match.date).toISOString() : '',
+            match.matchId,
+            match.isDoubles ? 'Doubles' : 'Singles',
+            match.court,
+            match.side,
+            match.teammates,
+            match.opponents,
+            match.pointsFor,
+            match.pointsAgainst,
+            match.won ? 'Win' : 'Loss'
+        ]));
+    }
+    const safeUsername = player.username.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '') || 'player';
+    downloadOrganiserCsv(`${safeUsername}-lifetime-match-history.csv`, rows);
+};
+
+const downloadMatchSummariesCsv = (session: SessionData) => {
+    const rankedPlayers = getSessionTotals(session);
+    const playerRanks = new Map(rankedPlayers.map((player, index) => [player.username, index + 1]));
+    const matchRows: { winnerRank: number; row: (string | number)[] }[] = [];
     session.matches.filter((match) => match.status === 'finished').forEach((match) => {
         const team1 = (match.isDoubles ? [match.player1, match.player2] : [match.player1])
             .filter((name): name is string => Boolean(name));
         const team2 = (match.isDoubles ? [match.player3, match.player4] : [match.player2])
             .filter((name): name is string => Boolean(name));
-        rows.push([
-            match.matchId,
-            match.startTime ? new Date(match.startTime).toISOString() : '',
-            match.court,
-            match.isDoubles ? 'Doubles' : 'Singles',
-            team1.join(' & '),
-            team2.join(' & '),
-            match.score.team1,
-            match.score.team2,
-            match.winner ?? ''
-        ]);
+        const winnerNames = match.winnerTeam === 'team1' || team1.includes(match.winnerTeam ?? '')
+            ? team1
+            : team2;
+        const winnerRank = Math.min(...winnerNames.map((username) => playerRanks.get(username) ?? Number.MAX_SAFE_INTEGER));
+        matchRows.push({
+            winnerRank,
+            row: [
+                match.matchId,
+                match.startTime ? new Date(match.startTime).toISOString() : '',
+                match.court,
+                match.isDoubles ? 'Doubles' : 'Singles',
+                team1.join(' & '),
+                team2.join(' & '),
+                match.score.team1,
+                match.score.team2,
+                match.winner ?? '',
+                winnerRank === Number.MAX_SAFE_INTEGER ? '' : winnerRank
+            ]
+        });
     });
+    matchRows.sort((a, b) => a.winnerRank - b.winnerRank);
+    const rows: (string | number)[][] = [[
+        'Match ID', 'Date', 'Court', 'Format', 'Side 1 players', 'Side 2 players',
+        'Side 1 points', 'Side 2 points', 'Winner', 'Winner session rank'
+    ], ...matchRows.map((entry) => entry.row)];
     downloadCsv(session, 'match-summaries', rows);
 };
 
 const downloadPlayerPerformancesCsv = (session: SessionData) => {
-    const totals = new Map(getSessionTotals(session).map((player) => [player.username, player]));
-    const rows: (string | number)[][] = [[
-        'Match ID', 'Date', 'Court', 'Format', 'Player', 'Side',
-        'Points scored', 'Points conceded', 'Won match',
-        'Session games', 'Session wins', 'Session points scored', 'Session points conceded'
-    ]];
+    const rankedPlayers = getSessionTotals(session);
+    const playerRanks = new Map(rankedPlayers.map((player, index) => [player.username, index]));
+    const performanceRows: { username: string; row: (string | number)[] }[] = [];
     session.matches.filter((match) => match.status === 'finished').forEach((match) => {
         const teams = [
             {
@@ -271,24 +412,38 @@ const downloadPlayerPerformancesCsv = (session: SessionData) => {
             }
         ];
         teams.forEach((team) => team.players.forEach((username) => {
-            const playerTotals = totals.get(username);
-            rows.push([
-                match.matchId,
-                match.startTime ? new Date(match.startTime).toISOString() : '',
-                match.court,
-                match.isDoubles ? 'Doubles' : 'Singles',
+            const playerTotals = rankedPlayers.find((item) => item.username === username);
+            performanceRows.push({
                 username,
-                team.side,
-                team.pointsFor,
-                team.pointsAgainst,
-                team.won ? 'Yes' : 'No',
-                playerTotals?.games ?? 0,
-                playerTotals?.wins ?? 0,
-                playerTotals?.pointsFor ?? 0,
-                playerTotals?.pointsAgainst ?? 0
-            ]);
+                row: [
+                    match.matchId,
+                    match.startTime ? new Date(match.startTime).toISOString() : '',
+                    match.court,
+                    match.isDoubles ? 'Doubles' : 'Singles',
+                    username,
+                    team.side,
+                    team.pointsFor,
+                    team.pointsAgainst,
+                    team.won ? 'Yes' : 'No',
+                    playerTotals?.games ?? 0,
+                    playerTotals?.wins ?? 0,
+                    playerTotals?.pointsFor ?? 0,
+                    playerTotals?.pointsAgainst ?? 0
+                ]
+            });
         }));
     });
+    performanceRows.sort((a, b) =>
+        (playerRanks.get(a.username) ?? Number.MAX_SAFE_INTEGER) -
+        (playerRanks.get(b.username) ?? Number.MAX_SAFE_INTEGER) ||
+        a.username.localeCompare(b.username)
+    );
+    const rows: (string | number)[][] = [[
+        'Match ID', 'Date', 'Court', 'Format', 'Player', 'Side',
+        'Points scored', 'Points conceded', 'Won match',
+        'Session games', 'Session wins', 'Session points scored', 'Session points conceded'
+    ]];
+    rows.push(...performanceRows.map((entry) => entry.row));
     downloadCsv(session, 'player-performances', rows);
 };
 
@@ -297,6 +452,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
     const [playerAccounts, setPlayerAccounts] = useState<PlayerAccount[]>([]);
+    const [playerStats, setPlayerStats] = useState<OrganiserPlayerStats[]>([]);
+    const [playerStatsLoading, setPlayerStatsLoading] = useState(false);
     const [selectedPlayers, setSelectedPlayers] = useState<PlayerSelection[]>([]);
     const [courtFormats, setCourtFormats] = useState<Format[]>(['singles']);
     const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null);
@@ -343,6 +500,20 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const upsertSession = (updated: SessionData) => {
         setSelectedSession(updated);
         setSessions((current) => [updated, ...current.filter((session) => session._id !== updated._id)]);
+    };
+
+    const openPlayerStats = async () => {
+        setScreen('player-stats');
+        setPlayerStatsLoading(true);
+        setError('');
+        try {
+            const stats = await apiRequest<OrganiserPlayerStats[]>('/player-stats');
+            setPlayerStats(stats);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setPlayerStatsLoading(false);
+        }
     };
 
     const openCreateForm = () => {
@@ -682,6 +853,93 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             </header>
 
             {error && <div className="organiser-error" role="alert">{error}</div>}
+
+            <nav className="organiser-workspace-nav" aria-label="Organiser sections">
+                <button
+                    className={screen !== 'player-stats' ? 'active' : ''}
+                    type="button"
+                    onClick={() => setScreen('sessions')}
+                >
+                    Sessions
+                </button>
+                <button
+                    className={screen === 'player-stats' ? 'active' : ''}
+                    type="button"
+                    onClick={() => void openPlayerStats()}
+                >
+                    Player Stats
+                </button>
+            </nav>
+
+            {screen === 'player-stats' && (
+                <section className="organiser-card">
+                    <div className="organiser-section-heading">
+                        <div>
+                            <span className="organiser-eyebrow">YOUR ORGANISER SESSIONS</span>
+                            <h2>Player Stats</h2>
+                            <p>Registered players ranked by current ELO, with results from your sessions.</p>
+                        </div>
+                        <button
+                            className="organiser-button"
+                            type="button"
+                            disabled={!playerStats.length}
+                            onClick={() => downloadPlayerStatsCsv(playerStats)}
+                        >
+                            Download leaderboard CSV
+                        </button>
+                    </div>
+                    {playerStatsLoading ? (
+                        <p className="organiser-muted">Loading player stats…</p>
+                    ) : playerStats.length ? (
+                        <div className="organiser-summary-table-wrap">
+                            <table className="organiser-summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Player</th>
+                                        <th>ELO</th>
+                                        <th>Games</th>
+                                        <th>Wins</th>
+                                        <th>Losses</th>
+                                        <th>Win rate</th>
+                                        <th>Points for</th>
+                                        <th>Points against</th>
+                                        <th>Point diff.</th>
+                                        <th>Lifetime record</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {playerStats.map((player) => (
+                                        <tr key={player.username}>
+                                            <td>{player.rank}</td>
+                                            <td><strong>{player.username}</strong></td>
+                                            <td>{player.rating}</td>
+                                            <td>{player.games}</td>
+                                            <td>{player.wins}</td>
+                                            <td>{player.losses}</td>
+                                            <td>{player.winRate}%</td>
+                                            <td>{player.pointsFor}</td>
+                                            <td>{player.pointsAgainst}</td>
+                                            <td>{player.pointDifference}</td>
+                                            <td>
+                                                <button
+                                                    className="organiser-button secondary"
+                                                    type="button"
+                                                    onClick={() => downloadPlayerLifetimeCsv(player)}
+                                                >
+                                                    Download CSV
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <p className="organiser-muted">No registered players have played in your sessions yet.</p>
+                    )}
+                </section>
+            )}
 
             {formMode && (
                 <section className="organiser-card organiser-form-card">
@@ -1070,6 +1328,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         <div className="organiser-actions">
                             <button className="organiser-button secondary" type="button" onClick={() => downloadMatchSummariesCsv(selectedSession)}>Download match summaries CSV</button>
                             <button className="organiser-button" type="button" onClick={() => downloadPlayerPerformancesCsv(selectedSession)}>Download player performances CSV</button>
+                            <button className="organiser-button secondary" type="button" onClick={() => downloadSessionRankingsCsv(selectedSession)}>Download session rankings CSV</button>
                         </div>
                     </div>
                     <section className="organiser-subcard">
