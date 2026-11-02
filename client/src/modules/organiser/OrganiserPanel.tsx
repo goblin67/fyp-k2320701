@@ -854,17 +854,25 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
             {error && <div className="organiser-error" role="alert">{error}</div>}
 
-            <nav className="organiser-workspace-nav" aria-label="Organiser sections">
+            <nav className="organiser-workspace-nav" aria-label="Organiser sections" role="tablist">
                 <button
+                    id="organiser-matches-tab"
                     className={screen !== 'player-stats' ? 'active' : ''}
                     type="button"
+                    role="tab"
+                    aria-selected={screen !== 'player-stats'}
+                    aria-controls="organiser-matches-panel"
                     onClick={() => setScreen('sessions')}
                 >
-                    Sessions
+                    Organiser Matches
                 </button>
                 <button
+                    id="organiser-player-stats-tab"
                     className={screen === 'player-stats' ? 'active' : ''}
                     type="button"
+                    role="tab"
+                    aria-selected={screen === 'player-stats'}
+                    aria-controls="organiser-player-stats-panel"
                     onClick={() => void openPlayerStats()}
                 >
                     Player Stats
@@ -872,7 +880,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             </nav>
 
             {screen === 'player-stats' && (
-                <section className="organiser-card">
+                <section className="organiser-card" id="organiser-player-stats-panel" role="tabpanel" aria-labelledby="organiser-player-stats-tab">
                     <div className="organiser-section-heading">
                         <div>
                             <span className="organiser-eyebrow">YOUR ORGANISER SESSIONS</span>
@@ -973,7 +981,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             )}
 
             {!formMode && screen === 'sessions' && (
-                <section className="organiser-card">
+                <section className="organiser-card" id="organiser-matches-panel" role="tabpanel" aria-labelledby="organiser-matches-tab">
                     <div className="organiser-section-heading">
                         <div>
                             <span className="organiser-eyebrow">YOUR SESSIONS</span>
