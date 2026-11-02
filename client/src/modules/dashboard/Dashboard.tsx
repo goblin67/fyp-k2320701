@@ -1,8 +1,8 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 
-type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history' | 'create-session';
+type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history';
 
 interface UserProfileResponse {
     username: string;
@@ -435,11 +435,18 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 .top-tabs { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
                 .top-tabs button { background: #171a20; color: #b5b8c7; border: 1px solid transparent; border-radius: 999px; padding: 12px 20px; transition: all 0.2s ease; }
                 .top-tabs button.active { background: #2f7be5; color: #fff; border-color: rgba(75,154,255,0.35); }
+                .top-tabs .beta-unlock { display: inline-flex; align-items: center; background: #171a20; color: #b5b8c7; border: 1px solid #496cad; border-radius: 999px; padding: 12px 20px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; }
+                .top-tabs .beta-unlock:hover { background: #24395a; color: #fff; }
+                .beta-access-note { margin: -8px 0 20px; color: #b5b8c7; font-size: 0.9rem; }
+                .beta-access-note a { color: #8db7ff; }
                 .dyslexia-mode { background: #090b10; color: #f8f8f8; }
                 .dyslexia-mode .dash-card { background: #10151f; border-color: #3d6ff0; }
                 .dyslexia-mode .topbar { background: linear-gradient(135deg, #2545a5, #1a6ad5); }
                 .dyslexia-mode .top-tabs button { background: rgba(255,255,255,0.08); color: #e9f0ff; border-color: rgba(255,255,255,0.18); }
                 .dyslexia-mode .top-tabs button.active { background: #3c7cff; color: #fff; border-color: rgba(255,255,255,0.6); }
+                .dyslexia-mode .top-tabs .beta-unlock { background: rgba(255,255,255,0.08); color: #e9f0ff; border-color: rgba(255,255,255,0.35); }
+                .dyslexia-mode .beta-access-note { color: #e9f0ff; }
+                .dyslexia-mode .beta-access-note a { color: #a9c6ff; }
                 .dyslexia-mode .dash-card, .dyslexia-mode .settings-card { border-color: #2c6bec; }
                 .dyslexia-mode .summary-card, .dyslexia-mode .profile-card, .dyslexia-mode .settings-card { background: #132032; }
                 .dyslexia-mode .settings-preview { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
@@ -501,8 +508,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 .text-green { color: #4CAF50; font-weight: bold; }
                 .text-red { color: #f44336; font-weight: bold; }
                 .error-banner { background: #f4433622; color: #f44336; padding: 10px; border-radius: 6px; margin-bottom: 20px; text-align: center; border: 1px solid #f44336; }
-                .setup-form { display: flex; flex-direction: column; gap: 15px; max-width: 500px; }
-                .setup-form input, .setup-form textarea, .setup-form select { background: #2a2a2a; border: 1px solid #444; color: white; padding: 12px; border-radius: 6px; }
                 .btn-primary { background: #4CAF50; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; }
                 .logout-btn { background: #333; color: #ff5252; border: 1px solid #444; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
                 @media (max-width: 960px) {
@@ -554,10 +559,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                         fetchSessionHistory();
                         setView('session-history');
                     }}>Session History</button>
-                    <button className={view === 'create-session' ? 'active' : ''} onClick={() => {
-                        setSelectedSession(null);
-                        setView('create-session');
-                    }}>Create Session</button>
+                    <a className="beta-unlock" href="mailto:miscellaneousaffairs21@gmail.com?subject=Request%20access%20to%20session%20creation%20beta">Unlock beta</a>
                     <button className={view === 'settings' ? 'active' : ''} onClick={() => {
                         setSelectedSession(null);
                         setView('settings');
@@ -571,6 +573,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                         </button>
                     )}
                 </nav>
+                <p className="beta-access-note">Session creation is in beta. Email <a href="mailto:miscellaneousaffairs21@gmail.com">miscellaneousaffairs21@gmail.com</a> to request access.</p>
 
                 <section className="hero-card">
                     <div>
@@ -775,18 +778,8 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                                 ))}
                             </div>
                         ) : (
-                            <p style={{ color: '#666' }}>No past sessions found yet. Create one to start saving sessions.</p>
+                            <p style={{ color: '#666' }}>No past sessions found yet.</p>
                         )}
-                    </section>
-                )}
-
-                {view === 'create-session' && (
-                    <section>
-                        <h3>Create Session</h3>
-                        <SessionSetupForm 
-                            onStart={() => { fetchData(); }} // Refresh data to find the new session
-                            API_URL={API_URL} 
-                        />
                     </section>
                 )}
 
@@ -1080,73 +1073,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 )}
             </div>
         </div>
-    );
-};
-
-interface SessionSetupFormProps {
-    onStart: () => void;
-    API_URL: string;
-}
-
-const SessionSetupForm = ({ onStart, API_URL }: SessionSetupFormProps) => {
-    const [formData, setFormData] = useState({
-        title: '',
-        numCourts: 1,
-        isDoubles: false,
-        playerNames: ''
-    });
-    const [submitting, setSubmitting] = useState(false);
-
-    const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        setSubmitting(true);
-        try {
-            const res = await fetch(`${API_URL}/api/session/start`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify(formData)
-            });
-
-            if (res.ok) {
-                onStart();
-            } else {
-                const errorData = await readJson<ErrorResponse>(res);
-                alert(`Error: ${errorData.error ?? "Could not start session"}`);
-            }
-        } catch (err) {
-            alert("Connection error. Check if backend is running.");
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    return (
-        <form className="setup-form" onSubmit={handleSubmit}>
-            <input type="text" placeholder="Session Title (e.g. Monday Social)" required 
-                onChange={e => setFormData({...formData, title: e.target.value})} />
-            
-            <div style={{ display: 'flex', gap: '10px' }}>
-                <select style={{ flex: 1 }} onChange={e => setFormData({...formData, isDoubles: e.target.value === 'true'})}>
-                    <option value="false">Singles</option>
-                    <option value="true">Doubles</option>
-                </select>
-                <input style={{ flex: 1 }} type="number" placeholder="Courts" min="1" max="6" required 
-                    onChange={e => setFormData({...formData, numCourts: parseInt(e.target.value)})} />
-            </div>
-
-            <textarea 
-                placeholder="Enter player names (comma separated)... e.g. Amay, John, Sarah, Guest1" 
-                required
-                onChange={e => setFormData({...formData, playerNames: e.target.value})}
-            />
-            
-            <button type="submit" className="btn-primary" disabled={submitting}>
-                {submitting ? 'Initializing...' : 'Initialize Session'}
-            </button>
-        </form>
     );
 };
 

@@ -3,6 +3,7 @@ const router = express.Router();
 import User from '../users/user.model.js';
 import Session from './session.model.js';
 import authMiddleware from '../auth/auth.middleware.js';
+import organiserMiddleware from '../auth/organiser.middleware.js';
 import { startSession, endMatch, endSession, addPlayerToSession, removePlayerFromSession, replaceMatchPlayer } from './session.controller.js';
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Unknown error';
@@ -137,7 +138,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/start', authMiddleware, startSession);
+router.post('/start', authMiddleware, organiserMiddleware, startSession);
 
 router.post('/end', authMiddleware, endMatch);
 
