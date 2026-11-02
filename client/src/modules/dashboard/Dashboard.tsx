@@ -529,9 +529,38 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 }
                 @media (max-width: 700px) {
-                    .topbar, .hero-card { flex-direction: column; align-items: flex-start; }
-                    .top-tabs { justify-content: center; }
-                    .summary-grid { grid-template-columns: 1fr; }
+                    .dashboard-container { padding: 18px 10px; }
+                    .dash-card { width: 100%; padding: 16px; }
+                    .topbar, .hero-card { flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px; }
+                    .user-slot { width: 100%; justify-content: space-between; }
+                    .top-tabs { justify-content: flex-start; gap: 8px; }
+                    .top-tabs button, .top-tabs .beta-unlock { flex: 1 1 135px; justify-content: center; min-width: 0; padding: 10px 12px; text-align: center; white-space: normal; }
+                    .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+                    .summary-card { padding: 16px; }
+                    .summary-card span { font-size: 0.72rem; letter-spacing: 0.08em; }
+                    .summary-card strong { font-size: 1.65rem; }
+                    .overview-grid { grid-template-columns: 1fr; gap: 12px; }
+                    .profile-card { padding: 18px; }
+                    .leaderboard-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+                    .summary-pill { padding: 14px 10px; }
+                    .beta-request-card { align-items: stretch; flex-direction: column; padding: 18px; }
+                    .beta-request-card .beta-unlock { justify-content: center; text-align: center; }
+                    .settings-card { padding: 18px; }
+                    .settings-option { align-items: stretch; flex-direction: column; padding: 16px; }
+                    .dashboard-container table { display: block; max-width: 100%; overflow-x: auto; }
+                    .dashboard-container th, .dashboard-container td { padding: 11px 9px; }
+                    .dashboard-container section { min-width: 0; }
+                }
+                @media (max-width: 420px) {
+                    .dashboard-container { padding: 10px 6px; }
+                    .dash-card { padding: 12px; }
+                    .topbar, .hero-card { padding: 15px; }
+                    .brand { font-size: 1.5rem; }
+                    .top-tabs button, .top-tabs .beta-unlock { flex-basis: 120px; font-size: 0.88rem; }
+                    .summary-card { padding: 13px 10px; }
+                    .summary-card strong { font-size: 1.45rem; }
+                    .settings-range { gap: 8px; }
+                    .settings-value { min-width: 46px; }
                 }
                 `}
             </style>

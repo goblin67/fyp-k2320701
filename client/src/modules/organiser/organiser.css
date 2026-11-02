@@ -607,10 +607,48 @@
 }
 
 @media (max-width: 760px) {
+    .organiser-shell {
+        padding: 24px 12px 40px;
+    }
+
     .organiser-topbar,
     .organiser-section-heading {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .organiser-topbar {
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+
+    .organiser-topbar > div,
+    .organiser-section-heading > div {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .organiser-workspace-nav {
+        flex-wrap: wrap;
+    }
+
+    .organiser-workspace-nav button {
+        flex: 1 1 180px;
+    }
+
+    .organiser-actions {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .organiser-actions > .organiser-button {
+        flex: 1 1 160px;
+    }
+
+    .organiser-card {
+        padding: 18px;
+        border-radius: 17px;
     }
 
     .organiser-setup-grid,
@@ -624,6 +662,17 @@
 
     .organiser-session-row {
         align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 15px;
+    }
+
+    .organiser-session-row > span:first-child {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .organiser-session-row .organiser-status {
+        margin-left: auto;
     }
 
     .organiser-score-entry {
@@ -632,5 +681,38 @@
 
     .organiser-winner-select {
         grid-column: auto;
+    }
+
+    .organiser-summary-table-wrap {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .organiser-summary-table {
+        min-width: max-content;
+    }
+}
+
+@media (max-width: 420px) {
+    .organiser-shell {
+        padding: 16px 8px 32px;
+    }
+
+    .organiser-card {
+        padding: 14px;
+        border-radius: 14px;
+    }
+
+    .organiser-subcard {
+        padding: 14px;
+    }
+
+    .organiser-empty {
+        padding: 20px;
+    }
+
+    .organiser-actions > .organiser-button {
+        flex-basis: 100%;
     }
 }
