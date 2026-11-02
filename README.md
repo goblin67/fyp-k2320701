@@ -13,3 +13,8 @@ password before granting organiser access and will not replace that password.
 
 All other registered accounts receive the player role. Organisers are routed to
 the session panel after login; planned sessions can be edited until they start.
+
+During a live organiser session, generated lineups remain proposed until approved.
+Organisers can edit lineups, enter each side's points, choose the winner, and
+finish matches to generate the next proposal. Completed sessions include a
+match-by-match and player points summary with a CSV download.

@@ -4,7 +4,8 @@ import './organiser.css';
 
 type Format = 'singles' | 'doubles';
 type PlayerKind = 'account' | 'guest';
-type Screen = 'sessions' | 'details' | 'setup' | 'live';
+type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary';
+type MatchLineup = [string, string, string?, string?];
 
 interface PlayerAccount {
     username: string;
@@ -92,10 +93,16 @@ const apiRequest = async <T,>(path: string, init: ApiRequestOptions = {}): Promi
     return body;
 };
 
+const getLineup = (match: SessionMatch): MatchLineup => match.isDoubles
+    ? [match.player1 ?? '', match.player2 ?? '', match.player3 ?? '', match.player4 ?? '']
+    : [match.player1 ?? '', match.player2 ?? ''];
+
 const CourtDiagram = ({ number, format, match }: { number: number; format: Format; match?: SessionMatch }) => {
-    const players = match
-        ? [match.player1, match.player2, ...(format === 'doubles' ? [match.player3, match.player4] : [])].filter(Boolean)
-        : [];
+    const sideOne = [match?.player1, ...(format === 'doubles' ? [match?.player2] : [])].filter(Boolean);
+    const sideTwo = format === 'doubles'
+        ? [match?.player3, match?.player4].filter(Boolean)
+        : [match?.player2].filter(Boolean);
+    const matchStatus = match?.status === 'proposed' ? 'Proposed' : match ? 'Playing' : 'Waiting';
 
     return (
         <article className="organiser-court">
@@ -104,8 +111,8 @@ const CourtDiagram = ({ number, format, match }: { number: number; format: Forma
                     <span className="organiser-eyebrow">COURT {number}</span>
                     <h3>{format === 'doubles' ? 'Doubles' : 'Singles'}</h3>
                 </div>
-                <span className={`organiser-court-status${match ? ' is-playing' : ''}`}>
-                    {match ? 'Playing' : 'Waiting'}
+                <span className={`organiser-court-status${match?.status === 'ongoing' ? ' is-playing' : ''}${match?.status === 'proposed' ? ' is-proposed' : ''}`}>
+                    {matchStatus}
                 </span>
             </header>
             <svg className="organiser-court-image" viewBox="0 0 160 250" role="img" aria-label={`Badminton court ${number}`}>
@@ -118,14 +125,93 @@ const CourtDiagram = ({ number, format, match }: { number: number; format: Forma
                 <line x1="31" y1="42" x2="31" y2="208" />
                 <line x1="129" y1="42" x2="129" y2="208" />
                 <line className="organiser-court-net" x1="7" y1="125" x2="153" y2="125" />
+                {sideOne.map((player, index) => (
+                    <text className="organiser-court-player" key={`one-${player}`} x="80" y={format === 'doubles' ? 77 + index * 30 : 83}>
+                        {player}
+                    </text>
+                ))}
+                {sideTwo.map((player, index) => (
+                    <text className="organiser-court-player team-two" key={`two-${player}`} x="80" y={format === 'doubles' ? 163 + index * 30 : 184}>
+                        {player}
+                    </text>
+                ))}
             </svg>
-            <div className="organiser-court-players">
-                {players.length
-                    ? players.map((player) => <span key={player}>{player}</span>)
-                    : <span className="organiser-muted">Waiting for preferred players</span>}
-            </div>
         </article>
     );
+};
+
+interface PlayerSessionTotals {
+    username: string;
+    games: number;
+    wins: number;
+    pointsFor: number;
+    pointsAgainst: number;
+}
+
+const getSessionTotals = (session: SessionData): PlayerSessionTotals[] => {
+    const totals = new Map(session.players.map((player) => [player.username, {
+        username: player.username,
+        games: 0,
+        wins: 0,
+        pointsFor: 0,
+        pointsAgainst: 0
+    }]));
+    session.matches.filter((match) => match.status === 'finished').forEach((match) => {
+        const team1 = (match.isDoubles ? [match.player1, match.player2] : [match.player1])
+            .filter((name): name is string => Boolean(name));
+        const team2 = (match.isDoubles ? [match.player3, match.player4] : [match.player2])
+            .filter((name): name is string => Boolean(name));
+        const isTeam2Winner = match.winnerTeam === 'team2';
+        [...team1, ...team2].forEach((username) => {
+            const playerTotals = totals.get(username);
+            if (!playerTotals) return;
+            const onTeam1 = team1.includes(username);
+            playerTotals.games += 1;
+            if ((onTeam1 && !isTeam2Winner) || (!onTeam1 && isTeam2Winner)) playerTotals.wins += 1;
+            playerTotals.pointsFor += onTeam1 ? match.score.team1 : match.score.team2;
+            playerTotals.pointsAgainst += onTeam1 ? match.score.team2 : match.score.team1;
+        });
+    });
+    return [...totals.values()].sort((a, b) => b.pointsFor - a.pointsFor || b.wins - a.wins || a.username.localeCompare(b.username));
+};
+
+const downloadSessionCsv = (session: SessionData) => {
+    const totals = getSessionTotals(session);
+    const rows: (string | number)[][] = [[
+        'Record type', 'Match ID', 'Date', 'Court', 'Format', 'Player', 'Side',
+        'Points for', 'Points against', 'Winner', 'Total games', 'Wins',
+        'Session points for', 'Session points against'
+    ]];
+    session.matches.filter((match) => match.status === 'finished').forEach((match) => {
+        const team1 = (match.isDoubles ? [match.player1, match.player2] : [match.player1])
+            .filter((name): name is string => Boolean(name));
+        const team2 = (match.isDoubles ? [match.player3, match.player4] : [match.player2])
+            .filter((name): name is string => Boolean(name));
+        [...team1.map((username) => ({ username, side: 'Team 1', pointsFor: match.score.team1, pointsAgainst: match.score.team2 })),
+            ...team2.map((username) => ({ username, side: 'Team 2', pointsFor: match.score.team2, pointsAgainst: match.score.team1 }))]
+            .forEach((entry) => {
+                const playerTotals = totals.find((item) => item.username === entry.username);
+                rows.push([
+                    'Match', match.matchId, match.startTime ? new Date(match.startTime).toISOString() : '',
+                    match.court, match.isDoubles ? 'Doubles' : 'Singles', entry.username, entry.side,
+                    entry.pointsFor, entry.pointsAgainst, match.winner ?? '',
+                    playerTotals?.games ?? 0, playerTotals?.wins ?? 0,
+                    playerTotals?.pointsFor ?? 0, playerTotals?.pointsAgainst ?? 0
+                ]);
+            });
+    });
+    totals.filter((player) => player.games === 0).forEach((player) => rows.push([
+        'Player total', '', '', '', '', player.username, '', '', '', '',
+        player.games, player.wins, player.pointsFor, player.pointsAgainst
+    ]));
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${session.title.replace(/[^a-z0-9-_]+/gi, '-')}-summary.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
 };
 
 const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
@@ -148,6 +234,9 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [lineupEdits, setLineupEdits] = useState<Record<string, MatchLineup>>({});
+    const [scoreEdits, setScoreEdits] = useState<Record<string, { team1: string; team2: string }>>({});
+    const [winnerEdits, setWinnerEdits] = useState<Record<string, 'team1' | 'team2'>>({});
 
     useEffect(() => {
         let cancelled = false;
@@ -388,7 +477,90 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
             const body = await response.json() as SessionActionResponse;
             if (!response.ok) throw new Error(body.error ?? 'Could not end session');
             upsertSession(body.session);
-            setScreen('details');
+            setScreen('summary');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const saveLineup = async (match: SessionMatch): Promise<SessionData | null> => {
+        if (!selectedSession) return null;
+        const lineup = lineupEdits[match.matchId] ?? getLineup(match);
+        const otherPlayingPlayers = selectedSession.matches.some((other) =>
+            other.matchId !== match.matchId && other.status === 'ongoing' &&
+            [other.player1, other.player2, other.player3, other.player4].some((username) => Boolean(username && lineup.includes(username)))
+        );
+        if (otherPlayingPlayers && !window.confirm('This lineup moves a player out of another live match, leaving that match with a vacant spot. Continue?')) {
+            return null;
+        }
+
+        const updated = await apiRequest<SessionData>(`/sessions/${selectedSession._id}/matches/${match.matchId}/players`, {
+            method: 'PATCH',
+            body: JSON.stringify({ lineup })
+        });
+        upsertSession(updated);
+        setLineupEdits((current) => {
+            const next = { ...current };
+            delete next[match.matchId];
+            return next;
+        });
+        return updated;
+    };
+
+    const startProposedMatch = async (match: SessionMatch) => {
+        if (!selectedSession) return;
+        setBusy(true);
+        setError('');
+        try {
+            const updatedLineup = await saveLineup(match);
+            if (!updatedLineup) return;
+            const updated = await apiRequest<SessionData>(`/sessions/${selectedSession._id}/matches/${match.matchId}/start`, {
+                method: 'POST'
+            });
+            upsertSession(updated);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const finishLiveMatch = async (match: SessionMatch) => {
+        if (!selectedSession) return;
+        const score = scoreEdits[match.matchId] ?? {
+            team1: String(match.score.team1),
+            team2: String(match.score.team2)
+        };
+        const winnerTeam = winnerEdits[match.matchId] ?? match.winnerTeam;
+        if (!winnerTeam) {
+            setError('Choose the winning side before ending the match.');
+            return;
+        }
+        setBusy(true);
+        setError('');
+        try {
+            const updated = await apiRequest<SessionData>(`/sessions/${selectedSession._id}/matches/${match.matchId}/finish`, {
+                method: 'POST',
+                body: JSON.stringify({ team1: Number(score.team1), team2: Number(score.team2), winnerTeam })
+            });
+            upsertSession(updated);
+            setScoreEdits((current) => {
+                const next = { ...current };
+                delete next[match.matchId];
+                return next;
+            });
+            setWinnerEdits((current) => {
+                const next = { ...current };
+                delete next[match.matchId];
+                return next;
+            });
+            setLineupEdits((current) => {
+                const next = { ...current };
+                delete next[match.matchId];
+                return next;
+            });
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -398,11 +570,13 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
 
     const statusOf = (session: SessionData): string =>
         session.status ?? (session.isActive ? 'active' : 'completed');
-    const activeMatches = selectedSession?.matches.filter((match) => match.status === 'ongoing') ?? [];
-    const playingNames = new Set(activeMatches.flatMap((match) =>
+    const proposedMatches = selectedSession?.matches.filter((match) => match.status === 'proposed') ?? [];
+    const courtMatches = selectedSession?.matches.filter((match) => match.status !== 'finished') ?? [];
+    const playingNames = new Set(courtMatches.flatMap((match) =>
         [match.player1, match.player2, match.player3, match.player4].filter((name): name is string => Boolean(name))
     ));
     const waitingPlayers = selectedSession?.players.filter((player) => !playingNames.has(player.username)) ?? [];
+    const sessionTotals = selectedSession ? getSessionTotals(selectedSession) : [];
     const courts = selectedSession?.courtFormats?.length
         ? selectedSession.courtFormats
         : Array.from({ length: selectedSession?.numCourts ?? 0 }, () => selectedSession?.isDoubles ? 'doubles' : 'singles');
@@ -475,7 +649,7 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                             {sessions.map((session) => (
                                 <button className="organiser-session-row" key={session._id} type="button" onClick={() => {
                                     setSelectedSession(session);
-                                    setScreen(statusOf(session) === 'active' ? 'live' : 'details');
+                                    setScreen(statusOf(session) === 'active' ? 'live' : statusOf(session) === 'completed' ? 'summary' : 'details');
                                 }}>
                                     <span>
                                         <strong>{session.title}</strong>
@@ -506,6 +680,11 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                         <div className="organiser-actions">
                             <button className="organiser-button secondary" type="button" onClick={openEditForm}>Edit session</button>
                             <button className="organiser-button" type="button" onClick={beginSessionSetup}>Start session</button>
+                        </div>
+                    )}
+                    {statusOf(selectedSession) === 'completed' && (
+                        <div className="organiser-actions">
+                            <button className="organiser-button" type="button" onClick={() => setScreen('summary')}>View session summary</button>
                         </div>
                     )}
                 </section>
@@ -624,15 +803,98 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                         <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
                     </div>
                     <div className="organiser-court-grid live">
-                        {courts.map((format, index) => (
-                            <CourtDiagram
-                                key={index}
-                                number={index + 1}
-                                format={format as Format}
-                                match={activeMatches.find((match) => match.court === index + 1)}
-                            />
-                        ))}
+                        {courts.map((format, index) => {
+                            const match = courtMatches.find((item) => item.court === index + 1);
+                            if (!match) {
+                                return <CourtDiagram key={index} number={index + 1} format={format as Format} />;
+                            }
+                            const fields = match.isDoubles
+                                ? ['player1', 'player2', 'player3', 'player4'] as const
+                                : ['player1', 'player2'] as const;
+                            const lineup = lineupEdits[match.matchId] ?? getLineup(match);
+                            const score = scoreEdits[match.matchId] ?? {
+                                team1: String(match.score.team1),
+                                team2: String(match.score.team2)
+                            };
+                            const winnerTeam = winnerEdits[match.matchId] ?? match.winnerTeam ?? '';
+                            const team1 = (match.isDoubles ? [lineup[0], lineup[1]] : [lineup[0]])
+                                .filter(Boolean).join(' & ') || 'Team 1';
+                            const team2 = (match.isDoubles ? [lineup[2], lineup[3]] : [lineup[1]])
+                                .filter(Boolean).join(' & ') || 'Team 2';
+                            return (
+                                <div className="organiser-live-court" key={index}>
+                                    <CourtDiagram number={index + 1} format={format as Format} match={match} />
+                                    <div className="organiser-match-controls">
+                                        {match.status === 'proposed' ? (
+                                            <div className="organiser-proposal-note">
+                                                <strong>Proposed next match</strong>
+                                                <span>Review or edit the lineup, then approve to start.</span>
+                                            </div>
+                                        ) : (
+                                            <div className="organiser-score-entry">
+                                                <label>{team1} points
+                                                    <input type="number" min="0" step="1" value={score.team1} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team1: event.target.value } }))} />
+                                                </label>
+                                                <label>{team2} points
+                                                    <input type="number" min="0" step="1" value={score.team2} onChange={(event) => setScoreEdits((current) => ({ ...current, [match.matchId]: { ...score, team2: event.target.value } }))} />
+                                                </label>
+                                                <label className="organiser-winner-select">Winning side
+                                                    <select value={winnerTeam} onChange={(event) => setWinnerEdits((current) => ({ ...current, [match.matchId]: event.target.value as 'team1' | 'team2' }))}>
+                                                        <option value="">Select winner</option>
+                                                        <option value="team1">{team1}</option>
+                                                        <option value="team2">{team2}</option>
+                                                    </select>
+                                                </label>
+                                            </div>
+                                        )}
+                                        <details className="organiser-lineup-editor">
+                                            <summary>{match.status === 'proposed' ? 'Edit proposed players' : 'Edit or remove players'}</summary>
+                                            <div className="organiser-form compact">
+                                                {fields.map((field, playerIndex) => (
+                                                    <label key={field}>Player {playerIndex + 1}
+                                                        <select value={lineup[playerIndex] ?? ''} onChange={(event) => {
+                                                            const next = [...lineup] as MatchLineup;
+                                                            next[playerIndex] = event.target.value;
+                                                            setLineupEdits((current) => ({ ...current, [match.matchId]: next }));
+                                                        }}>
+                                                            <option value="">Vacant</option>
+                                                            {selectedSession.players
+                                                                .filter((player) => !player.preferredFormat || player.preferredFormat === (match.isDoubles ? 'doubles' : 'singles'))
+                                                                .map((player) => (
+                                                                <option key={player.username} value={player.username}>{player.username}{player.preferredFormat ? ` · ${player.preferredFormat}` : ''}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                ))}
+                                                <button className="organiser-button secondary" type="button" disabled={busy} onClick={async () => {
+                                                    setBusy(true);
+                                                    setError('');
+                                                    try {
+                                                        await saveLineup(match);
+                                                    } catch (requestError) {
+                                                        setError(getErrorMessage(requestError));
+                                                    } finally {
+                                                        setBusy(false);
+                                                    }
+                                                }}>Save lineup</button>
+                                            </div>
+                                        </details>
+                                        {match.status === 'proposed' ? (
+                                            <button className="organiser-button" type="button" disabled={busy || lineup.slice(0, fields.length).some((name) => !name)} onClick={() => void startProposedMatch(match)}>
+                                                {busy ? 'Starting…' : 'Approve & start match'}
+                                            </button>
+                                        ) : (
+                                            <button className="organiser-button" type="button" disabled={busy || !winnerTeam || score.team1 === '' || score.team2 === ''} onClick={() => void finishLiveMatch(match)}>
+                                                {busy ? 'Saving…' : 'Save score & end match'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
+                    {proposedMatches.length > 0 && <p className="organiser-help">Approve each proposed match when its players and court are ready.</p>}
+                    {!courtMatches.length && <p className="organiser-muted">No match is currently proposed. Add waiting players who match a court preference to generate the next proposal.</p>}
                     <section className="organiser-subcard">
                         <h3>Waiting queue · {waitingPlayers.length}</h3>
                         {waitingPlayers.length ? (
@@ -694,6 +956,60 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                             </div>
                             <button className="organiser-button secondary" type="submit" disabled={busy}>{busy ? 'Registering…' : 'Register account and add player'}</button>
                         </form>
+                    </section>
+                    <section className="organiser-subcard">
+                        <h3>Completed matches · {selectedSession.matches.filter((match) => match.status === 'finished').length}</h3>
+                        {selectedSession.matches.filter((match) => match.status === 'finished').map((match) => (
+                            <div className="organiser-roster-row" key={match.matchId}>
+                                <span>
+                                    <strong>Court {match.court} · {match.isDoubles ? 'Doubles' : 'Singles'} · {match.score.team1}–{match.score.team2}</strong>
+                                    <small>{[match.player1, match.player2, match.player3, match.player4].filter(Boolean).join(' · ')} · Winner: {match.winner}</small>
+                                </span>
+                            </div>
+                        ))}
+                        {!selectedSession.matches.some((match) => match.status === 'finished') && <p className="organiser-muted">No completed matches yet.</p>}
+                    </section>
+                </section>
+            )}
+
+            {!formMode && screen === 'summary' && selectedSession && (
+                <section className="organiser-card">
+                    <button className="organiser-back" type="button" onClick={() => setScreen('sessions')}>← All sessions</button>
+                    <div className="organiser-section-heading">
+                        <div><span className="organiser-eyebrow">SESSION SUMMARY</span><h2>{selectedSession.title}</h2><p>{selectedSession.scheduledAt ? new Date(selectedSession.scheduledAt).toLocaleString() : ''} · {selectedSession.matches.filter((match) => match.status === 'finished').length} completed matches</p></div>
+                        <button className="organiser-button" type="button" onClick={() => downloadSessionCsv(selectedSession)}>Download CSV</button>
+                    </div>
+                    <section className="organiser-subcard">
+                        <h3>Player totals</h3>
+                        <div className="organiser-summary-table-wrap">
+                            <table className="organiser-summary-table">
+                                <thead><tr><th>Player</th><th>Games</th><th>Wins</th><th>Points for</th><th>Points against</th></tr></thead>
+                                <tbody>
+                                    {sessionTotals.map((player) => (
+                                        <tr key={player.username}>
+                                            <td>{player.username}</td><td>{player.games}</td><td>{player.wins}</td><td>{player.pointsFor}</td><td>{player.pointsAgainst}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                    <section className="organiser-subcard">
+                        <h3>Match-by-match results</h3>
+                        <div className="organiser-summary-matches">
+                            {selectedSession.matches.filter((match) => match.status === 'finished').map((match) => (
+                                <article className="organiser-summary-match" key={match.matchId}>
+                                    <strong>Court {match.court} · {match.isDoubles ? 'Doubles' : 'Singles'} · {match.score.team1}–{match.score.team2}</strong>
+                                    <span>
+                                        {(match.isDoubles ? [match.player1, match.player2] : [match.player1]).filter(Boolean).join(' & ')}
+                                        {' vs '}
+                                        {(match.isDoubles ? [match.player3, match.player4] : [match.player2]).filter(Boolean).join(' & ')}
+                                    </span>
+                                    <small>Winner: {match.winner}{match.startTime ? ` · ${new Date(match.startTime).toLocaleString()}` : ''}</small>
+                                </article>
+                            ))}
+                        </div>
+                        {!selectedSession.matches.some((match) => match.status === 'finished') && <p className="organiser-muted">No completed matches to summarize.</p>}
                     </section>
                 </section>
             )}

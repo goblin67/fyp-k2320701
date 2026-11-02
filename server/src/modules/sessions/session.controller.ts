@@ -142,8 +142,11 @@ const createPlayerObject = async (name: string): Promise<SessionPlayer> => {
 };
 
 const getQueuePlayers = (session: SessionDocument): SessionPlayer[] => {
-    const ongoing = getOngoingPlayers(session);
-    return session.players.filter((player) => !ongoing.includes(player.username));
+    const assigned = session.matches
+        .filter((match) => match.status !== 'finished')
+        .flatMap((match) => [match.player1, match.player2, match.player3, match.player4])
+        .filter((username): username is string => Boolean(username));
+    return session.players.filter((player) => !assigned.includes(player.username));
 };
 
 const getTeamStats = (players: RatingPlayer[]): RatingStats => {
@@ -183,18 +186,59 @@ const applyRatingDelta = async (playerRecord: RatingPlayer, delta: number, oppon
     }
 };
 
-const getOngoingPlayers = (session: SessionDocument): string[] => {
-    return session.matches
-        .filter((m) => m.status === 'ongoing')
-        .flatMap((m) => [m.player1, m.player2, m.player3, m.player4].filter((username): username is string => Boolean(username)));
+export const updateMatchRatings = async (
+    session: SessionDocument,
+    winnerNames: string[],
+    loserNames: string[]
+): Promise<void> => {
+    const loadRatingPlayers = async (usernames: string[], isWinner: boolean): Promise<RatingPlayer[]> =>
+        Promise.all(usernames.map(async (username): Promise<RatingPlayer> => {
+            const user = await User.findOne({ username });
+            const sessionPlayer = findSessionPlayer(session, username);
+            return {
+                username,
+                user,
+                session,
+                rating: user ? user.rating : sessionPlayer?.rating ?? 1500,
+                rd: user ? user.rd : sessionPlayer?.rd ?? 350,
+                vol: user ? user.vol : sessionPlayer?.vol ?? 0.06,
+                isWinner
+            };
+        }));
+
+    const winnerPlayers = await loadRatingPlayers(winnerNames, true);
+    const loserPlayers = await loadRatingPlayers(loserNames, false);
+    const winnerStats = getTeamStats(winnerPlayers);
+    const loserStats = getTeamStats(loserPlayers);
+    const winnerGlicko = ranking.makePlayer(winnerStats.rating, winnerStats.rd, winnerStats.vol);
+    const loserGlicko = ranking.makePlayer(loserStats.rating, loserStats.rd, loserStats.vol);
+    ranking.updateRatings([[winnerGlicko, loserGlicko, 1]]);
+
+    const winnerDelta = winnerGlicko.getRating() - winnerStats.rating;
+    const loserDelta = loserGlicko.getRating() - loserStats.rating;
+    for (const winner of winnerPlayers) {
+        winner.newRd = winnerGlicko.getRd();
+        winner.newVol = winnerGlicko.getVol();
+        await applyRatingDelta(winner, winnerDelta, loserNames);
+    }
+    for (const loser of loserPlayers) {
+        loser.newRd = loserGlicko.getRd();
+        loser.newVol = loserGlicko.getVol();
+        await applyRatingDelta(loser, loserDelta, winnerNames);
+    }
 };
 
 export const getFreeCourts = (session: SessionDocument): number[] => {
-    const busyCourts = session.matches.filter((m) => m.status === 'ongoing').map((m) => m.court);
+    const busyCourts = session.matches.filter((m) => m.status !== 'finished').map((m) => m.court);
     return Array.from({ length: session.numCourts }, (_, i) => i + 1).filter((court) => !busyCourts.includes(court));
 };
 
-export const buildWaitingMatches = (players: SessionPlayer[], freeCourts: number[], session: SessionDocument): SessionMatch[] => {
+export const buildWaitingMatches = (
+    players: SessionPlayer[],
+    freeCourts: number[],
+    session: SessionDocument,
+    proposed = false
+): SessionMatch[] => {
     const sortedPlayers = [...players].sort((a, b) => {
         const joinedA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
         const joinedB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
@@ -244,8 +288,8 @@ export const buildWaitingMatches = (players: SessionPlayer[], freeCourts: number
             player2: matchPlayers[1]!.username,
             court,
             isDoubles,
-            status: 'ongoing',
-            startTime: new Date(),
+            status: proposed ? 'proposed' : 'ongoing',
+            ...(proposed ? {} : { startTime: new Date() }),
             score: {
                 team1: 0,
                 team2: 0
@@ -327,8 +371,8 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
             return res.status(404).json({ error: 'Match not found' });
         }
 
-        if (match.status === 'finished') {
-            return res.status(400).json({ error: 'Match already ended' });
+        if (match.status !== 'ongoing') {
+            return res.status(400).json({ error: 'Only a live match can be ended' });
         }
 
         const requiredPlayers = (match.isDoubles ?? session.isDoubles)
@@ -355,54 +399,7 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
             ? (winnerTeam === 'team2' ? teamOnePlayers : teamTwoPlayers)
             : (winnerName === match.player1 ? [match.player2!] : [match.player1!]);
 
-        const winnerPlayers = await Promise.all(winnerNames.map(async (username): Promise<RatingPlayer> => {
-            const user = await User.findOne({ username });
-            const sessionPlayer = findSessionPlayer(session, username);
-            return {
-                username,
-                user,
-                session,
-                rating: user ? user.rating : sessionPlayer?.rating ?? 1500,
-                rd: user ? user.rd : sessionPlayer?.rd ?? 350,
-                vol: user ? user.vol : sessionPlayer?.vol ?? 0.06,
-                isWinner: true
-            };
-        }));
-
-        const loserPlayers = await Promise.all(loserNames.map(async (username): Promise<RatingPlayer> => {
-            const user = await User.findOne({ username });
-            const sessionPlayer = findSessionPlayer(session, username);
-            return {
-                username,
-                user,
-                session,
-                rating: user ? user.rating : sessionPlayer?.rating ?? 1500,
-                rd: user ? user.rd : sessionPlayer?.rd ?? 350,
-                vol: user ? user.vol : sessionPlayer?.vol ?? 0.06,
-                isWinner: false
-            };
-        }));
-
-        const winnerStats = getTeamStats(winnerPlayers);
-        const loserStats = getTeamStats(loserPlayers);
-
-        const winnerGlicko = ranking.makePlayer(winnerStats.rating, winnerStats.rd, winnerStats.vol);
-        const loserGlicko = ranking.makePlayer(loserStats.rating, loserStats.rd, loserStats.vol);
-        ranking.updateRatings([[winnerGlicko, loserGlicko, 1]]);
-
-        const winnerDelta = winnerGlicko.getRating() - winnerStats.rating;
-        const loserDelta = loserGlicko.getRating() - loserStats.rating;
-
-        for (const winner of winnerPlayers) {
-            winner.newRd = winnerGlicko.getRd();
-            winner.newVol = winnerGlicko.getVol();
-            await applyRatingDelta(winner, winnerDelta, loserNames);
-        }
-        for (const loser of loserPlayers) {
-            loser.newRd = loserGlicko.getRd();
-            loser.newVol = loserGlicko.getVol();
-            await applyRatingDelta(loser, loserDelta, winnerNames);
-        }
+        await updateMatchRatings(session, winnerNames, loserNames);
 
         match.status = 'finished';
         match.winner = winnerNames.join(' & ');
@@ -418,10 +415,7 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
             }
         });
 
-        const waitingPlayers = session.players.filter((p) => {
-            const ongoing = getOngoingPlayers(session);
-            return !ongoing.includes(p.username);
-        });
+        const waitingPlayers = getQueuePlayers(session);
 
         const freeCourts = getFreeCourts(session);
         const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session);
@@ -504,6 +498,7 @@ export const removePlayerFromSession: RequestHandler<ParamsDictionary, unknown, 
         }
 
         session.matches.forEach((match) => {
+            if (match.status === 'finished') return;
             (['player1', 'player2', 'player3', 'player4'] as PlayerField[]).forEach((field) => {
                 if (match[field] === username) {
                     match[field] = undefined;
@@ -555,6 +550,9 @@ export const replaceMatchPlayer: RequestHandler<ParamsDictionary, unknown, Repla
         const match = session.matches.find((m) => m.matchId === matchId);
         if (!match) {
             return res.status(404).json({ error: 'Match not found' });
+        }
+        if (match.status === 'finished') {
+            return res.status(400).json({ error: 'Finished matches cannot be edited' });
         }
 
         const queuePlayers = getQueuePlayers(session).map((player) => player.username);

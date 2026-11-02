@@ -1,6 +1,6 @@
 import mongoose, { Schema, Types } from 'mongoose';
 
-export type MatchStatus = 'ongoing' | 'finished';
+export type MatchStatus = 'proposed' | 'ongoing' | 'finished';
 export type PlayerField = 'player1' | 'player2' | 'player3' | 'player4';
 export type PlayFormat = 'singles' | 'doubles';
 export type SessionStatus = 'scheduled' | 'active' | 'completed';
@@ -31,7 +31,7 @@ export interface SessionMatch {
   isDoubles?: boolean;
   matchId: string;
   status: MatchStatus;
-  startTime: Date;
+  startTime?: Date;
   score: MatchScore;
   winner?: string;
   winnerTeam?: string;
@@ -76,8 +76,8 @@ const matchSchema = new Schema<SessionMatch>({
   court: { type: Number, required: true },
   isDoubles: Boolean,
   matchId: { type: String, required: true },
-  status: { type: String, enum: ['ongoing', 'finished'], default: 'ongoing' },
-  startTime: { type: Date, default: Date.now },
+  status: { type: String, enum: ['proposed', 'ongoing', 'finished'], default: 'ongoing' },
+  startTime: Date,
   score: {
     team1: { type: Number, default: 0 },
     team2: { type: Number, default: 0 },

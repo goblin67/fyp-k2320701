@@ -30,7 +30,7 @@ export interface MatchScore {
   team2: number;
 }
 
-export type MatchStatus = 'ongoing' | 'finished';
+export type MatchStatus = 'proposed' | 'ongoing' | 'finished';
 export type PlayerField = 'player1' | 'player2' | 'player3' | 'player4';
 export type WinnerTeam = 'team1' | 'team2';
 
@@ -46,7 +46,7 @@ export interface SessionMatch {
   startTime?: string | Date;
   score: MatchScore;
   winner?: string;
-  winnerTeam?: string;
+  winnerTeam?: WinnerTeam;
 }
 
 export interface SessionData {

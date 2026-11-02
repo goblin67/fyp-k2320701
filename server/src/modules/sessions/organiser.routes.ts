@@ -2,14 +2,30 @@ import express from 'express';
 import authMiddleware from '../auth/auth.middleware.js';
 import organiserMiddleware from '../auth/organiser.middleware.js';
 import User from '../users/user.model.js';
-import Session, { type PlayFormat, type SessionPlayer } from './session.model.js';
-import { getFreeCourts, buildWaitingMatches } from './session.controller.js';
+import Session, { type PlayFormat, type PlayerField, type SessionDocument, type SessionMatch, type SessionPlayer } from './session.model.js';
+import { getFreeCourts, buildWaitingMatches, updateMatchRatings } from './session.controller.js';
 
 const router = express.Router();
 const formats: PlayFormat[] = ['singles', 'doubles'];
 
 const isFormat = (value: unknown): value is PlayFormat =>
     typeof value === 'string' && formats.includes(value as PlayFormat);
+
+const getWaitingPlayers = (session: SessionDocument | null) => {
+    if (!session) return [];
+    const assigned = new Set(
+        session.matches
+            .filter((match) => match.status !== 'finished')
+            .flatMap((match) => [match.player1, match.player2, match.player3, match.player4])
+            .filter((username): username is string => Boolean(username))
+    );
+    return session.players.filter((player) => !assigned.has(player.username));
+};
+
+const getMatchFields = (match: SessionMatch): PlayerField[] =>
+    (match.isDoubles ?? false)
+        ? ['player1', 'player2', 'player3', 'player4']
+        : ['player1', 'player2'];
 
 router.use(authMiddleware, organiserMiddleware);
 
@@ -219,11 +235,7 @@ router.post('/sessions/:id/start', async (req, res) => {
         session.isDoubles = courtFormats.every((format) => format === 'doubles');
         session.status = 'active';
         session.isActive = true;
-        session.matches = buildWaitingMatches(session.players, getFreeCourts(session), session);
-        if (session.matches.length === 0) {
-            res.status(400).json({ error: 'No court has enough players who prefer its format. Adjust the player preferences or court formats.' });
-            return;
-        }
+        session.matches = buildWaitingMatches(session.players, getFreeCourts(session), session, true);
 
         await session.save();
         res.json(session);
@@ -292,10 +304,7 @@ router.post('/sessions/:id/players', async (req, res) => {
             vol: user?.vol ?? 0.06,
             joinedAt: new Date()
         });
-        const waitingPlayers = session.players.filter((player) => !session.matches.some(
-            (match) => match.status === 'ongoing' && [match.player1, match.player2, match.player3, match.player4].includes(player.username)
-        ));
-        const newMatches = buildWaitingMatches(waitingPlayers, getFreeCourts(session), session);
+        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
         if (newMatches.length) session.matches.push(...newMatches);
         session.isActive = true;
         await session.save();
@@ -303,6 +312,167 @@ router.post('/sessions/:id/players', async (req, res) => {
     } catch (error) {
         console.error('ORGANISER PLAYER ADD ERROR:', error);
         res.status(500).json({ error: 'Could not add player to session' });
+    }
+});
+
+router.post('/sessions/:id/matches/:matchId/start', async (req, res) => {
+    try {
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        const match = session.matches.find((item) => item.matchId === req.params.matchId);
+        if (!match || match.status !== 'proposed') {
+            res.status(404).json({ error: 'Proposed match not found' });
+            return;
+        }
+        const fields = getMatchFields(match);
+        const names = fields.map((field) => match[field]);
+        if (names.some((name) => !name) || new Set(names).size !== names.length) {
+            res.status(400).json({ error: 'Complete the proposed lineup with unique players before starting' });
+            return;
+        }
+        const assignedElsewhere = session.matches.some((other) =>
+            other !== match && other.status === 'ongoing' &&
+            fields.some((field) => {
+                const name = match[field];
+                return Boolean(name && [other.player1, other.player2, other.player3, other.player4].includes(name));
+            })
+        );
+        if (assignedElsewhere) {
+            res.status(409).json({ error: 'A proposed player is still assigned to another live match. Edit the lineup to pull them out first.' });
+            return;
+        }
+
+        match.status = 'ongoing';
+        match.startTime = new Date();
+        await session.save();
+        res.json(session);
+    } catch (error) {
+        console.error('ORGANISER MATCH START ERROR:', error);
+        res.status(500).json({ error: 'Could not start proposed match' });
+    }
+});
+
+router.patch('/sessions/:id/matches/:matchId/players', async (req, res) => {
+    try {
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        const match = session.matches.find((item) => item.matchId === req.params.matchId);
+        if (!match || match.status === 'finished') {
+            res.status(404).json({ error: 'Editable match not found' });
+            return;
+        }
+        const fields = getMatchFields(match);
+        const lineup = req.body?.lineup;
+        if (!Array.isArray(lineup) || lineup.length !== fields.length) {
+            res.status(400).json({ error: `Provide ${fields.length} lineup entries` });
+            return;
+        }
+        const names: (string | undefined)[] = lineup.map((name: unknown) =>
+            name === null || name === '' ? undefined : typeof name === 'string' ? name : undefined
+        );
+        if (lineup.some((name: unknown) => name !== null && name !== '' && typeof name !== 'string')) {
+            res.status(400).json({ error: 'Lineup entries must be player names or empty' });
+            return;
+        }
+        const selectedNames = names.filter((name: string | undefined): name is string => Boolean(name));
+        if (new Set(selectedNames).size !== selectedNames.length) {
+            res.status(400).json({ error: 'A player cannot occupy more than one spot in the same match' });
+            return;
+        }
+        for (const username of selectedNames) {
+            const player = session.players.find((item) => item.username === username);
+            if (!player) {
+                res.status(400).json({ error: `Player "${username}" is not in this session` });
+                return;
+            }
+            const format: PlayFormat = match.isDoubles ? 'doubles' : 'singles';
+            if (player.preferredFormat && player.preferredFormat !== format) {
+                res.status(400).json({ error: `${username} prefers ${player.preferredFormat} and cannot be assigned to this ${format} match` });
+                return;
+            }
+        }
+
+        for (const other of session.matches) {
+            if (other === match || other.status === 'finished') continue;
+            for (const field of ['player1', 'player2', 'player3', 'player4'] as PlayerField[]) {
+                if (other[field] && selectedNames.includes(other[field]!)) other[field] = undefined;
+            }
+        }
+        fields.forEach((field, index) => {
+            match[field] = names[index] as string | undefined;
+        });
+
+        await session.save();
+        res.json(session);
+    } catch (error) {
+        console.error('ORGANISER MATCH LINEUP ERROR:', error);
+        res.status(500).json({ error: 'Could not update match lineup' });
+    }
+});
+
+router.post('/sessions/:id/matches/:matchId/finish', async (req, res) => {
+    try {
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        const match = session.matches.find((item) => item.matchId === req.params.matchId);
+        if (!match || match.status !== 'ongoing') {
+            res.status(404).json({ error: 'Live match not found' });
+            return;
+        }
+        const fields = getMatchFields(match);
+        const names = fields.map((field) => match[field]);
+        if (names.some((name) => !name) || new Set(names).size !== names.length) {
+            res.status(400).json({ error: 'Fill every player spot before ending the match' });
+            return;
+        }
+
+        const { team1, team2, winnerTeam } = req.body as {
+            team1?: unknown;
+            team2?: unknown;
+            winnerTeam?: unknown;
+        };
+        if (!Number.isInteger(team1) || Number(team1) < 0 || !Number.isInteger(team2) || Number(team2) < 0) {
+            res.status(400).json({ error: 'Enter a whole-number score of zero or more for both sides' });
+            return;
+        }
+        if (winnerTeam !== 'team1' && winnerTeam !== 'team2') {
+            res.status(400).json({ error: 'Select which side won the match' });
+            return;
+        }
+
+        match.score = { team1: Number(team1), team2: Number(team2) };
+        match.winnerTeam = winnerTeam;
+        const team1Players = (match.isDoubles ? [match.player1, match.player2] : [match.player1])
+            .filter((name): name is string => Boolean(name));
+        const team2Players = (match.isDoubles ? [match.player3, match.player4] : [match.player2])
+            .filter((name): name is string => Boolean(name));
+        const winners = winnerTeam === 'team1' ? team1Players : team2Players;
+        const losers = winnerTeam === 'team1' ? team2Players : team1Players;
+        await updateMatchRatings(session, winners, losers);
+        match.winner = winners.join(' & ');
+        match.status = 'finished';
+
+        const now = new Date();
+        session.players.forEach((player) => {
+            if (names.includes(player.username)) player.joinedAt = now;
+        });
+        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+        if (newMatches.length) session.matches.push(...newMatches);
+        session.isActive = true;
+        await session.save();
+        res.json(session);
+    } catch (error) {
+        console.error('ORGANISER MATCH FINISH ERROR:', error);
+        res.status(500).json({ error: 'Could not finish match' });
     }
 });
 

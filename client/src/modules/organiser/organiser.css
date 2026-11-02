@@ -382,6 +382,11 @@
     background: rgba(43, 125, 79, 0.18);
 }
 
+.organiser-court-status.is-proposed {
+    color: #f0d48e;
+    background: rgba(145, 105, 37, 0.22);
+}
+
 .organiser-court-image {
     display: block;
     width: min(100%, 150px);
@@ -392,21 +397,137 @@
     stroke-width: 1.4;
 }
 
+.organiser-court-player {
+    fill: #fff5d8;
+    stroke: #614a2c;
+    stroke-width: 0.45px;
+    paint-order: stroke;
+    font-size: 8px;
+    font-weight: 750;
+    text-anchor: middle;
+}
+
+.organiser-court-player.team-two {
+    fill: #d7efff;
+}
+
 .organiser-court-image .organiser-court-net {
     stroke: #f6d58e;
     stroke-width: 3;
 }
 
-.organiser-court-players {
+.organiser-live-court {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.organiser-match-controls {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #2d394a;
+    border-radius: 14px;
+    background: #111925;
+}
+
+.organiser-proposal-note {
     display: grid;
     gap: 5px;
-    min-height: 34px;
-    text-align: center;
+    color: #f0d48e;
+}
+
+.organiser-proposal-note span,
+.organiser-help {
+    color: #a7b3c9;
+    font-size: 0.88rem;
+}
+
+.organiser-score-entry {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.organiser-score-entry label {
+    display: grid;
+    gap: 6px;
+    color: #c9d5e8;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.organiser-score-entry input,
+.organiser-score-entry select,
+.organiser-lineup-editor select {
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid #37465b;
+    border-radius: 9px;
+    color: #eef2ff;
+    background: #0e1520;
+    font: inherit;
+}
+
+.organiser-winner-select {
+    grid-column: 1 / -1;
+}
+
+.organiser-lineup-editor {
+    color: #c5d0e2;
+    font-size: 0.88rem;
+}
+
+.organiser-lineup-editor summary {
+    width: fit-content;
+    color: #79cffa;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.organiser-lineup-editor .organiser-form {
+    margin-top: 12px;
+}
+
+.organiser-summary-table-wrap {
+    overflow-x: auto;
+}
+
+.organiser-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.organiser-summary-table th,
+.organiser-summary-table td {
+    padding: 11px 12px;
+    border-bottom: 1px solid #2b3747;
+    white-space: nowrap;
+}
+
+.organiser-summary-table th {
+    color: #8fd7f5;
     font-size: 0.82rem;
 }
 
-.organiser-court-players span:not(.organiser-muted) {
-    color: #dce9ff;
+.organiser-summary-matches {
+    display: grid;
+    gap: 9px;
+}
+
+.organiser-summary-match {
+    display: grid;
+    gap: 5px;
+    padding: 13px;
+    border-radius: 11px;
+    background: #182332;
+}
+
+.organiser-summary-match span,
+.organiser-summary-match small {
+    color: #a7b3c9;
 }
 
 .organiser-error {
@@ -437,5 +558,13 @@
 
     .organiser-session-row {
         align-items: flex-start;
+    }
+
+    .organiser-score-entry {
+        grid-template-columns: 1fr;
+    }
+
+    .organiser-winner-select {
+        grid-column: auto;
     }
 }
