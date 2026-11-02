@@ -1028,7 +1028,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                             </form>
                             <section className="account-export">
                                 <div>
-                                    <h5>Export account data</h5>
+                                    <h5>Export account data in JSON format</h5>
                                     <p>Download your profile details, match history, and recorded lifetime points.</p>
                                 </div>
                                 <button className="btn-primary secondary" type="button" disabled={accountActionBusy} onClick={() => void handleAccountExport()}>
