@@ -233,6 +233,52 @@ export const getFreeCourts = (session: SessionDocument): number[] => {
     return Array.from({ length: session.numCourts }, (_, i) => i + 1).filter((court) => !busyCourts.includes(court));
 };
 
+const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
+    const recentMatches = session.matches
+        .filter((match) => match.status === 'finished')
+        .sort((a, b) => new Date(b.finishedAt ?? b.startTime ?? 0).getTime() - new Date(a.finishedAt ?? a.startTime ?? 0).getTime())
+        .slice(0, 3);
+    const pairs = new Set<string>();
+    for (const match of recentMatches) {
+        const players = [match.player1, match.player2, match.player3, match.player4]
+            .filter((username): username is string => Boolean(username));
+        for (let first = 0; first < players.length; first += 1) {
+            for (let second = first + 1; second < players.length; second += 1) {
+                pairs.add([players[first]!, players[second]!].sort().join('\u0000'));
+            }
+        }
+    }
+    return pairs;
+};
+
+const choosePlayersForMatch = (
+    eligiblePlayers: SessionPlayer[],
+    neededPlayers: number,
+    recentPairs: Set<string>
+): { players: SessionPlayer[]; awaitingNextFinish: boolean } | null => {
+    const candidates = eligiblePlayers.slice(0, 14);
+    if (candidates.length < neededPlayers) return null;
+
+    let selection: SessionPlayer[] | null = null;
+    const search = (start: number, picked: SessionPlayer[]): boolean => {
+        if (picked.length === neededPlayers) {
+            selection = picked;
+            return true;
+        }
+        for (let index = start; index <= candidates.length - (neededPlayers - picked.length); index += 1) {
+            const candidate = candidates[index]!;
+            const repeatsRecentPair = picked.some((player) =>
+                recentPairs.has([player.username, candidate.username].sort().join('\u0000'))
+            );
+            if (!repeatsRecentPair && search(index + 1, [...picked, candidate])) return true;
+        }
+        return false;
+    };
+
+    if (search(0, []) && selection) return { players: selection, awaitingNextFinish: false };
+    return { players: candidates.slice(0, neededPlayers), awaitingNextFinish: true };
+};
+
 export const buildWaitingMatches = (
     players: SessionPlayer[],
     freeCourts: number[],
@@ -246,6 +292,7 @@ export const buildWaitingMatches = (
     });
     const newMatches = [];
     const hasCourtPreferences = session.courtFormats.length > 0;
+    const recentPairs = getRecentPlayerPairs(session);
 
     for (const court of freeCourts) {
         const format: PlayFormat = session.courtFormats[court - 1] ?? (session.isDoubles ? 'doubles' : 'singles');
@@ -254,34 +301,10 @@ export const buildWaitingMatches = (
         const getEligiblePlayers = () => sortedPlayers.filter((player) =>
             !hasCourtPreferences || player.preferredFormat === format
         );
-        if (getEligiblePlayers().length < neededPlayers) continue;
-
-        const firstPlayer = getEligiblePlayers()[0];
-        if (!firstPlayer) continue;
-        const matchPlayers = [firstPlayer];
-        sortedPlayers.splice(sortedPlayers.indexOf(firstPlayer), 1);
-
-        if (isDoubles) {
-            const eligiblePlayers = getEligiblePlayers();
-            if (eligiblePlayers.length < 3) continue;
-            const partnerIndex = selectClosestByRating(eligiblePlayers, matchPlayers[0]!, 4);
-            const partner = eligiblePlayers[partnerIndex];
-            if (!partner) continue;
-            matchPlayers.push(partner);
-            sortedPlayers.splice(sortedPlayers.indexOf(partner), 1);
-
-            const finalPlayers = getEligiblePlayers().slice(0, 2);
-            if (finalPlayers.length < 2) continue;
-            matchPlayers.push(...finalPlayers);
-            finalPlayers.forEach((player) => sortedPlayers.splice(sortedPlayers.indexOf(player), 1));
-        } else {
-            const eligiblePlayers = getEligiblePlayers();
-            const partnerIndex = selectClosestByRating(eligiblePlayers, matchPlayers[0]!, 4);
-            const partner = eligiblePlayers[partnerIndex];
-            if (!partner) continue;
-            matchPlayers.push(partner);
-            sortedPlayers.splice(sortedPlayers.indexOf(partner), 1);
-        }
+        const chosen = choosePlayersForMatch(getEligiblePlayers(), neededPlayers, proposed ? recentPairs : new Set());
+        if (!chosen) continue;
+        const matchPlayers = chosen.players;
+        matchPlayers.forEach((player) => sortedPlayers.splice(sortedPlayers.indexOf(player), 1));
 
         const match: SessionMatch = {
             player1: matchPlayers[0]!.username,
@@ -289,6 +312,8 @@ export const buildWaitingMatches = (
             court,
             isDoubles,
             status: proposed ? 'proposed' : 'ongoing',
+            awaitingNextFinish: chosen.awaitingNextFinish,
+            manualOverride: false,
             ...(proposed ? {} : { startTime: new Date() }),
             score: {
                 team1: 0,
@@ -402,6 +427,7 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
         await updateMatchRatings(session, winnerNames, loserNames);
 
         match.status = 'finished';
+        match.finishedAt = new Date();
         match.winner = winnerNames.join(' & ');
         match.winnerTeam = match.player3 && match.player4 ? winnerTeam : winnerName;
         if (score) {

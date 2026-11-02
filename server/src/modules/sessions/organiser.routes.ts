@@ -327,6 +327,10 @@ router.post('/sessions/:id/matches/:matchId/start', async (req, res) => {
             res.status(404).json({ error: 'Proposed match not found' });
             return;
         }
+        if (match.awaitingNextFinish && !match.manualOverride) {
+            res.status(409).json({ error: 'This lineup repeats a recent pairing. Wait for another match to finish or edit the lineup to approve it manually.' });
+            return;
+        }
         const fields = getMatchFields(match);
         const names = fields.map((field) => match[field]);
         if (names.some((name) => !name) || new Set(names).size !== names.length) {
@@ -400,13 +404,23 @@ router.patch('/sessions/:id/matches/:matchId/players', async (req, res) => {
 
         for (const other of session.matches) {
             if (other === match || other.status === 'finished') continue;
+            let changed = false;
             for (const field of ['player1', 'player2', 'player3', 'player4'] as PlayerField[]) {
-                if (other[field] && selectedNames.includes(other[field]!)) other[field] = undefined;
+                if (other[field] && selectedNames.includes(other[field]!)) {
+                    other[field] = undefined;
+                    changed = true;
+                }
+            }
+            if (changed && other.status === 'proposed') {
+                other.awaitingNextFinish = true;
+                other.manualOverride = false;
             }
         }
         fields.forEach((field, index) => {
             match[field] = names[index] as string | undefined;
         });
+        match.manualOverride = true;
+        match.awaitingNextFinish = false;
 
         await session.save();
         res.json(session);
@@ -462,9 +476,13 @@ router.post('/sessions/:id/matches/:matchId/finish', async (req, res) => {
         match.status = 'finished';
 
         const now = new Date();
+        match.finishedAt = now;
         session.players.forEach((player) => {
             if (names.includes(player.username)) player.joinedAt = now;
         });
+        session.matches = session.matches.filter((item) =>
+            item.status !== 'proposed' || !item.awaitingNextFinish || item.manualOverride
+        );
         const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
         if (newMatches.length) session.matches.push(...newMatches);
         session.isActive = true;

@@ -31,7 +31,10 @@ export interface SessionMatch {
   isDoubles?: boolean;
   matchId: string;
   status: MatchStatus;
+  awaitingNextFinish?: boolean;
+  manualOverride?: boolean;
   startTime?: Date;
+  finishedAt?: Date;
   score: MatchScore;
   winner?: string;
   winnerTeam?: string;
@@ -77,7 +80,10 @@ const matchSchema = new Schema<SessionMatch>({
   isDoubles: Boolean,
   matchId: { type: String, required: true },
   status: { type: String, enum: ['proposed', 'ongoing', 'finished'], default: 'ongoing' },
+  awaitingNextFinish: { type: Boolean, default: false },
+  manualOverride: { type: Boolean, default: false },
   startTime: Date,
+  finishedAt: Date,
   score: {
     team1: { type: Number, default: 0 },
     team2: { type: Number, default: 0 },

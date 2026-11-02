@@ -98,8 +98,9 @@ const getLineup = (match: SessionMatch): MatchLineup => match.isDoubles
     : [match.player1 ?? '', match.player2 ?? ''];
 
 const CourtDiagram = ({ number, format, match }: { number: number; format: Format; match?: SessionMatch }) => {
-    const sideOne = [match?.player1, ...(format === 'doubles' ? [match?.player2] : [])].filter(Boolean);
-    const sideTwo = format === 'doubles'
+    const isDoubles = match?.isDoubles ?? format === 'doubles';
+    const sideOne = (isDoubles ? [match?.player1, match?.player2] : [match?.player1]).filter(Boolean);
+    const sideTwo = isDoubles
         ? [match?.player3, match?.player4].filter(Boolean)
         : [match?.player2].filter(Boolean);
     const matchStatus = match?.status === 'proposed' ? 'Proposed' : match ? 'Playing' : 'Waiting';
@@ -109,7 +110,7 @@ const CourtDiagram = ({ number, format, match }: { number: number; format: Forma
             <header>
                 <div>
                     <span className="organiser-eyebrow">COURT {number}</span>
-                    <h3>{format === 'doubles' ? 'Doubles' : 'Singles'}</h3>
+                    <h3>{isDoubles ? 'Doubles' : 'Singles'}</h3>
                 </div>
                 <span className={`organiser-court-status${match?.status === 'ongoing' ? ' is-playing' : ''}${match?.status === 'proposed' ? ' is-proposed' : ''}`}>
                     {matchStatus}
@@ -126,16 +127,26 @@ const CourtDiagram = ({ number, format, match }: { number: number; format: Forma
                 <line x1="129" y1="42" x2="129" y2="208" />
                 <line className="organiser-court-net" x1="7" y1="125" x2="153" y2="125" />
                 {sideOne.map((player, index) => (
-                    <text className="organiser-court-player" key={`one-${player}`} x="80" y={format === 'doubles' ? 77 + index * 30 : 83}>
+                    <text className="organiser-court-player" key={`one-${player}`} x="80" y={isDoubles ? 77 + index * 30 : 83}>
                         {player}
                     </text>
                 ))}
                 {sideTwo.map((player, index) => (
-                    <text className="organiser-court-player team-two" key={`two-${player}`} x="80" y={format === 'doubles' ? 163 + index * 30 : 184}>
+                    <text className="organiser-court-player team-two" key={`two-${player}`} x="80" y={isDoubles ? 163 + index * 30 : 184}>
                         {player}
                     </text>
                 ))}
             </svg>
+            <div className="organiser-proposed-players">
+                <div>
+                    <strong>Side 1</strong>
+                    <span>{sideOne.length ? sideOne.join(' & ') : 'Waiting for player'}</span>
+                </div>
+                <div>
+                    <strong>Side 2</strong>
+                    <span>{sideTwo.length ? sideTwo.join(' & ') : 'Waiting for player'}</span>
+                </div>
+            </div>
         </article>
     );
 };
@@ -514,8 +525,10 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
         setBusy(true);
         setError('');
         try {
-            const updatedLineup = await saveLineup(match);
-            if (!updatedLineup) return;
+            if (lineupEdits[match.matchId]) {
+                const updatedLineup = await saveLineup(match);
+                if (!updatedLineup) return;
+            }
             const updated = await apiRequest<SessionData>(`/sessions/${selectedSession._id}/matches/${match.matchId}/start`, {
                 method: 'POST'
             });
@@ -828,7 +841,9 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                                         {match.status === 'proposed' ? (
                                             <div className="organiser-proposal-note">
                                                 <strong>Proposed next match</strong>
-                                                <span>Review or edit the lineup, then approve to start.</span>
+                                                <span>{match.awaitingNextFinish && !match.manualOverride
+                                                    ? 'This lineup repeats a recent pairing. It will unlock after another match finishes, or you can edit the players to approve it manually.'
+                                                    : 'Review or edit the lineup, then approve to start.'}</span>
                                             </div>
                                         ) : (
                                             <div className="organiser-score-entry">
@@ -880,7 +895,11 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                                             </div>
                                         </details>
                                         {match.status === 'proposed' ? (
-                                            <button className="organiser-button" type="button" disabled={busy || lineup.slice(0, fields.length).some((name) => !name)} onClick={() => void startProposedMatch(match)}>
+                                            <button className="organiser-button" type="button" disabled={
+                                                busy ||
+                                                lineup.slice(0, fields.length).some((name) => !name) ||
+                                                (Boolean(match.awaitingNextFinish) && !match.manualOverride && !lineupEdits[match.matchId])
+                                            } onClick={() => void startProposedMatch(match)}>
                                                 {busy ? 'Starting…' : 'Approve & start match'}
                                             </button>
                                         ) : (

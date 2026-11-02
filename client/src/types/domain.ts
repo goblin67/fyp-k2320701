@@ -43,7 +43,10 @@ export interface SessionMatch {
   isDoubles?: boolean;
   matchId: string;
   status: MatchStatus;
+  awaitingNextFinish?: boolean;
+  manualOverride?: boolean;
   startTime?: string | Date;
+  finishedAt?: string | Date;
   score: MatchScore;
   winner?: string;
   winnerTeam?: WinnerTeam;
