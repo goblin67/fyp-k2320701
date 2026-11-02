@@ -240,12 +240,11 @@ const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
         .slice(0, 3);
     const pairs = new Set<string>();
     for (const match of recentMatches) {
-        const players = [match.player1, match.player2, match.player3, match.player4]
-            .filter((username): username is string => Boolean(username));
-        for (let first = 0; first < players.length; first += 1) {
-            for (let second = first + 1; second < players.length; second += 1) {
-                pairs.add([players[first]!, players[second]!].sort().join('\u0000'));
-            }
+        const teams = match.isDoubles
+            ? [[match.player1, match.player2], [match.player3, match.player4]]
+            : [[match.player1, match.player2]];
+        for (const [first, second] of teams) {
+            if (first && second) pairs.add([first, second].sort().join('\u0000'));
         }
     }
     return pairs;
@@ -254,29 +253,62 @@ const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
 const choosePlayersForMatch = (
     eligiblePlayers: SessionPlayer[],
     neededPlayers: number,
-    recentPairs: Set<string>
+    recentPairs: Set<string>,
+    isDoubles: boolean,
+    canWaitForAnotherMatch: boolean
 ): { players: SessionPlayer[]; awaitingNextFinish: boolean } | null => {
     const candidates = eligiblePlayers.slice(0, 14);
     if (candidates.length < neededPlayers) return null;
 
-    let selection: SessionPlayer[] | null = null;
-    const search = (start: number, picked: SessionPlayer[]): boolean => {
-        if (picked.length === neededPlayers) {
-            selection = picked;
-            return true;
-        }
-        for (let index = start; index <= candidates.length - (neededPlayers - picked.length); index += 1) {
-            const candidate = candidates[index]!;
-            const repeatsRecentPair = picked.some((player) =>
-                recentPairs.has([player.username, candidate.username].sort().join('\u0000'))
-            );
-            if (!repeatsRecentPair && search(index + 1, [...picked, candidate])) return true;
-        }
-        return false;
-    };
+    const pairKey = (first: SessionPlayer, second: SessionPlayer) =>
+        [first.username, second.username].sort().join('\u0000');
 
-    if (search(0, []) && selection) return { players: selection, awaitingNextFinish: false };
-    return { players: candidates.slice(0, neededPlayers), awaitingNextFinish: true };
+    if (!isDoubles) {
+        for (let first = 0; first < candidates.length - 1; first += 1) {
+            for (let second = first + 1; second < candidates.length; second += 1) {
+                const players = [candidates[first]!, candidates[second]!];
+                if (!recentPairs.has(pairKey(players[0]!, players[1]!))) {
+                    return { players, awaitingNextFinish: false };
+                }
+            }
+        }
+        return {
+            players: candidates.slice(0, neededPlayers),
+            awaitingNextFinish: canWaitForAnotherMatch
+        };
+    }
+
+    let bestSelection: SessionPlayer[] | null = null;
+    let fewestRepeatPartners = Number.POSITIVE_INFINITY;
+    for (let first = 0; first < candidates.length - 3; first += 1) {
+        for (let second = first + 1; second < candidates.length - 2; second += 1) {
+            for (let third = second + 1; third < candidates.length - 1; third += 1) {
+                for (let fourth = third + 1; fourth < candidates.length; fourth += 1) {
+                    const group = [candidates[first]!, candidates[second]!, candidates[third]!, candidates[fourth]!];
+                    const teamArrangements = [
+                        [group[0]!, group[1]!, group[2]!, group[3]!],
+                        [group[0]!, group[2]!, group[1]!, group[3]!],
+                        [group[0]!, group[3]!, group[1]!, group[2]!]
+                    ];
+                    for (const arrangement of teamArrangements) {
+                        const repeatPartners = Number(recentPairs.has(pairKey(arrangement[0]!, arrangement[1]!))) +
+                            Number(recentPairs.has(pairKey(arrangement[2]!, arrangement[3]!)));
+                        if (repeatPartners < fewestRepeatPartners) {
+                            bestSelection = arrangement;
+                            fewestRepeatPartners = repeatPartners;
+                        }
+                        if (repeatPartners === 0) return { players: arrangement, awaitingNextFinish: false };
+                    }
+                }
+            }
+        }
+    }
+
+    if (!bestSelection) return null;
+    return {
+        players: bestSelection,
+        awaitingNextFinish: fewestRepeatPartners > 0 && canWaitForAnotherMatch
+    };
 };
 
 export const buildWaitingMatches = (
@@ -298,10 +330,24 @@ export const buildWaitingMatches = (
         const format: PlayFormat = session.courtFormats[court - 1] ?? (session.isDoubles ? 'doubles' : 'singles');
         const isDoubles = format === 'doubles';
         const neededPlayers = isDoubles ? 4 : 2;
+        const canWaitForAnotherMatch = proposed && session.matches.some((match) =>
+            match.status === 'ongoing' &&
+            [match.player1, match.player2, match.player3, match.player4].some((username) => {
+                if (!username) return false;
+                const player = session.players.find((sessionPlayer) => sessionPlayer.username === username);
+                return Boolean(player && (!hasCourtPreferences || player.preferredFormat === format));
+            })
+        );
         const getEligiblePlayers = () => sortedPlayers.filter((player) =>
             !hasCourtPreferences || player.preferredFormat === format
         );
-        const chosen = choosePlayersForMatch(getEligiblePlayers(), neededPlayers, proposed ? recentPairs : new Set());
+        const chosen = choosePlayersForMatch(
+            getEligiblePlayers(),
+            neededPlayers,
+            proposed ? recentPairs : new Set(),
+            isDoubles,
+            canWaitForAnotherMatch
+        );
         if (!chosen) continue;
         const matchPlayers = chosen.players;
         matchPlayers.forEach((player) => sortedPlayers.splice(sortedPlayers.indexOf(player), 1));
