@@ -1,0 +1,441 @@
+.organiser-shell {
+    min-height: 100vh;
+    padding: 38px clamp(18px, 5vw, 72px) 64px;
+    color: #eef2ff;
+    background:
+        radial-gradient(circle at 85% 4%, rgba(35, 91, 157, 0.2), transparent 28rem),
+        #0d1118;
+    font-family: Inter, system-ui, sans-serif;
+}
+
+.organiser-shell * {
+    box-sizing: border-box;
+}
+
+.organiser-topbar,
+.organiser-section-heading,
+.organiser-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.organiser-topbar {
+    max-width: 1200px;
+    margin: 0 auto 30px;
+}
+
+.organiser-topbar h1,
+.organiser-section-heading h2 {
+    margin: 5px 0 8px;
+    letter-spacing: -0.035em;
+}
+
+.organiser-topbar h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+}
+
+.organiser-topbar p,
+.organiser-section-heading p {
+    margin: 0;
+    color: #a7b3c9;
+}
+
+.organiser-eyebrow {
+    color: #75c4f4;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+}
+
+.organiser-muted {
+    color: #9aa8be;
+}
+
+.organiser-card {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+    padding: clamp(20px, 3vw, 34px);
+    border: 1px solid #293445;
+    border-radius: 22px;
+    background: rgba(19, 26, 37, 0.94);
+    box-shadow: 0 22px 65px rgba(0, 0, 0, 0.22);
+}
+
+.organiser-section-heading {
+    margin-bottom: 22px;
+}
+
+.organiser-section-heading h2 {
+    font-size: clamp(1.45rem, 3vw, 2rem);
+}
+
+.organiser-button {
+    min-height: 42px;
+    padding: 10px 17px;
+    border: 1px solid #5cc6e9;
+    border-radius: 12px;
+    color: #06121b;
+    background: linear-gradient(135deg, #72d7fa, #59b8ec);
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.organiser-button:hover:not(:disabled) {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.organiser-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.organiser-button.secondary {
+    color: #dce8f8;
+    border-color: #3a4b61;
+    background: #1b2533;
+}
+
+.organiser-button.danger {
+    color: #fff;
+    border-color: #a64050;
+    background: #812e3b;
+}
+
+.organiser-empty {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+    padding: 30px;
+    border: 1px dashed #3c4b5e;
+    border-radius: 16px;
+    background: rgba(9, 14, 21, 0.55);
+}
+
+.organiser-empty h3,
+.organiser-empty p {
+    margin: 0;
+}
+
+.organiser-empty p {
+    max-width: 620px;
+    color: #a7b3c9;
+    line-height: 1.6;
+}
+
+.organiser-session-list {
+    display: grid;
+    gap: 10px;
+}
+
+.organiser-session-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 17px 19px;
+    border: 1px solid #2c394b;
+    border-radius: 14px;
+    color: inherit;
+    background: #111925;
+    text-align: left;
+    cursor: pointer;
+}
+
+.organiser-session-row:hover {
+    border-color: #5daed1;
+    background: #162333;
+}
+
+.organiser-session-row strong,
+.organiser-session-row small,
+.organiser-roster-row strong,
+.organiser-roster-row small,
+.organiser-player-option strong,
+.organiser-player-option small {
+    display: block;
+}
+
+.organiser-session-row small,
+.organiser-roster-row small,
+.organiser-player-option small {
+    margin-top: 5px;
+    color: #9aa8be;
+}
+
+.organiser-status {
+    flex: none;
+    padding: 6px 10px;
+    border: 1px solid #3c4b5e;
+    border-radius: 99px;
+    color: #d1d9e8;
+    font-size: 0.78rem;
+    font-weight: 750;
+    text-transform: capitalize;
+}
+
+.organiser-status.status-scheduled {
+    color: #f3d28b;
+    border-color: #6a5834;
+    background: rgba(138, 106, 40, 0.13);
+}
+
+.organiser-status.status-active {
+    color: #8ce2b0;
+    border-color: #32644c;
+    background: rgba(43, 125, 79, 0.15);
+}
+
+.organiser-status.status-completed {
+    color: #b7c3d6;
+    background: #202a38;
+}
+
+.organiser-back,
+.organiser-text-button {
+    padding: 0;
+    border: 0;
+    color: #79cffa;
+    background: none;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.organiser-back {
+    margin-bottom: 20px;
+}
+
+.organiser-detail-line {
+    margin: 12px 0;
+    color: #b7c2d4;
+}
+
+.organiser-actions {
+    justify-content: flex-end;
+    margin-top: 22px;
+}
+
+.organiser-form {
+    display: grid;
+    gap: 17px;
+}
+
+.organiser-form.compact {
+    gap: 12px;
+}
+
+.organiser-form label,
+.organiser-court-setup label {
+    display: grid;
+    gap: 7px;
+    color: #d1d9e8;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.organiser-form input,
+.organiser-form select,
+.organiser-court-setup select,
+.organiser-player-option select,
+.organiser-court-count {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 11px;
+    border: 1px solid #37465b;
+    border-radius: 10px;
+    color: #eef2ff;
+    background: #0e1520;
+    font: inherit;
+}
+
+.organiser-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+}
+
+.organiser-setup-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.organiser-subcard {
+    margin: 16px 0;
+    padding: 19px;
+    border: 1px solid #2d394a;
+    border-radius: 16px;
+    background: #111925;
+}
+
+.organiser-subcard h3 {
+    margin: 0 0 14px;
+    font-size: 1.05rem;
+}
+
+.organiser-subcard > .organiser-section-heading {
+    margin-bottom: 14px;
+}
+
+.organiser-subcard > .organiser-section-heading p {
+    margin-top: 5px;
+    color: #9aa8be;
+    font-size: 0.9rem;
+}
+
+.organiser-player-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 190px);
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid #273344;
+}
+
+.organiser-player-option:last-child {
+    border-bottom: 0;
+}
+
+.organiser-player-option > label {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    color: #eef2ff;
+    cursor: pointer;
+}
+
+.organiser-player-option input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #69c8ed;
+}
+
+.organiser-roster {
+    display: grid;
+    gap: 8px;
+}
+
+.organiser-roster-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 13px;
+    border-radius: 11px;
+    background: #182332;
+}
+
+.organiser-court-count {
+    width: auto;
+    min-width: 125px;
+}
+
+.organiser-court-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+}
+
+.organiser-court-setup {
+    display: grid;
+    gap: 11px;
+}
+
+.organiser-court {
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid #324257;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #172435, #121b28);
+}
+
+.organiser-court header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.organiser-court h3 {
+    margin: 4px 0 0;
+    font-size: 1rem;
+}
+
+.organiser-court-status {
+    padding: 5px 8px;
+    border-radius: 99px;
+    color: #e7cb8d;
+    background: rgba(159, 119, 43, 0.15);
+    font-size: 0.72rem;
+    font-weight: 750;
+}
+
+.organiser-court-status.is-playing {
+    color: #8ce2b0;
+    background: rgba(43, 125, 79, 0.18);
+}
+
+.organiser-court-image {
+    display: block;
+    width: min(100%, 150px);
+    height: 205px;
+    margin: 14px auto;
+    fill: #947243;
+    stroke: rgba(255, 255, 255, 0.85);
+    stroke-width: 1.4;
+}
+
+.organiser-court-image .organiser-court-net {
+    stroke: #f6d58e;
+    stroke-width: 3;
+}
+
+.organiser-court-players {
+    display: grid;
+    gap: 5px;
+    min-height: 34px;
+    text-align: center;
+    font-size: 0.82rem;
+}
+
+.organiser-court-players span:not(.organiser-muted) {
+    color: #dce9ff;
+}
+
+.organiser-error {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    padding: 12px 15px;
+    border: 1px solid #8e3d4b;
+    border-radius: 12px;
+    color: #ffd8dc;
+    background: rgba(127, 36, 51, 0.22);
+}
+
+@media (max-width: 760px) {
+    .organiser-topbar,
+    .organiser-section-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .organiser-setup-grid,
+    .organiser-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .organiser-player-option {
+        grid-template-columns: 1fr;
+    }
+
+    .organiser-session-row {
+        align-items: flex-start;
+    }
+}

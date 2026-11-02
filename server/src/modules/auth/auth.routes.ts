@@ -21,6 +21,7 @@ interface AuthResponse {
     error?: string;
     token?: string;
     username?: string;
+    role?: 'player' | 'organiser';
 }
 
 const router = express.Router();
@@ -32,6 +33,15 @@ const isDuplicateUsername = (error: unknown): boolean =>
 const register: RequestHandler<Record<string, never>, AuthResponse, RegisterRequest> = async (req, res) => {
     try {
         const { username, password, age, level } = req.body;
+        if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || password.length < 8) {
+            res.status(400).json({ error: 'Username is required and password must be at least 8 characters' });
+            return;
+        }
+        const organiserUsername = process.env.INITIAL_ORGANISER_USERNAME?.trim() || '1234';
+        if (username.trim() === organiserUsername) {
+            res.status(409).json({ error: 'This username is reserved for organiser account setup' });
+            return;
+        }
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const levelRatingMap: Record<string, number> = {
@@ -47,7 +57,7 @@ const register: RequestHandler<Record<string, never>, AuthResponse, RegisterRequ
         const initialRating = levelRatingMap[level ?? ''] ?? 1500;
 
         const user = new User({
-            username,
+            username: username.trim(),
             password: hashedPassword,
             age: age ? Number(age) : undefined,
             level: level || 'Beginner',
@@ -81,7 +91,7 @@ const login: RequestHandler<Record<string, never>, AuthResponse, LoginRequest> =
                 return;
             }
             const token = jwt.sign({ id: user._id.toString(), username: user.username }, secret);
-            res.json({ token, username: user.username });
+            res.json({ token, username: user.username, role: user.role ?? 'player' });
         } else {
             res.status(401).json({ error: "Invalid credentials" });
         }

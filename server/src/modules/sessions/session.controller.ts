@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import type { ParamsDictionary, RequestHandler } from 'express-serve-static-core';
-import Session, { type SessionDocument, type SessionMatch, type SessionPlayer, type MatchScore, type PlayerField } from './session.model.js';
+import Session, { type SessionDocument, type SessionMatch, type SessionPlayer, type MatchScore, type PlayerField, type PlayFormat } from './session.model.js';
 import User, { type UserDocument } from '../users/user.model.js';
 import glicko2 from 'glicko2';
 
@@ -105,6 +105,7 @@ const buildMatches = (players: SessionPlayer[], numCourts: number, isDoubles: bo
             player1: matchPlayers[0]!.username,
             player2: matchPlayers[1]!.username,
             court,
+            isDoubles,
             status: 'ongoing',
             startTime: new Date(),
             score: {
@@ -188,49 +189,68 @@ const getOngoingPlayers = (session: SessionDocument): string[] => {
         .flatMap((m) => [m.player1, m.player2, m.player3, m.player4].filter((username): username is string => Boolean(username)));
 };
 
-const getFreeCourts = (session: SessionDocument): number[] => {
+export const getFreeCourts = (session: SessionDocument): number[] => {
     const busyCourts = session.matches.filter((m) => m.status === 'ongoing').map((m) => m.court);
     return Array.from({ length: session.numCourts }, (_, i) => i + 1).filter((court) => !busyCourts.includes(court));
 };
 
-const buildWaitingMatches = (players: SessionPlayer[], freeCourts: number[], isDoubles: boolean): SessionMatch[] => {
-    const neededPlayers = isDoubles ? 4 : 2;
+export const buildWaitingMatches = (players: SessionPlayer[], freeCourts: number[], session: SessionDocument): SessionMatch[] => {
     const sortedPlayers = [...players].sort((a, b) => {
         const joinedA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
         const joinedB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
         return joinedA - joinedB || a.rating - b.rating;
     });
     const newMatches = [];
-    let courtIndex = 0;
+    const hasCourtPreferences = session.courtFormats.length > 0;
 
-    while (sortedPlayers.length >= neededPlayers && courtIndex < freeCourts.length) {
-        const firstPlayer = sortedPlayers.shift();
-        if (!firstPlayer) break;
+    for (const court of freeCourts) {
+        const format: PlayFormat = session.courtFormats[court - 1] ?? (session.isDoubles ? 'doubles' : 'singles');
+        const isDoubles = format === 'doubles';
+        const neededPlayers = isDoubles ? 4 : 2;
+        const getEligiblePlayers = () => sortedPlayers.filter((player) =>
+            !hasCourtPreferences || player.preferredFormat === format
+        );
+        if (getEligiblePlayers().length < neededPlayers) continue;
+
+        const firstPlayer = getEligiblePlayers()[0];
+        if (!firstPlayer) continue;
         const matchPlayers = [firstPlayer];
-        const remaining = sortedPlayers;
+        sortedPlayers.splice(sortedPlayers.indexOf(firstPlayer), 1);
 
         if (isDoubles) {
-            if (remaining.length < 3) break;
-            const partnerIndex = selectClosestByRating(remaining, matchPlayers[0]!, 4);
-            matchPlayers.push(...remaining.splice(partnerIndex, 1));
-            matchPlayers.push(...remaining.splice(0, 2));
+            const eligiblePlayers = getEligiblePlayers();
+            if (eligiblePlayers.length < 3) continue;
+            const partnerIndex = selectClosestByRating(eligiblePlayers, matchPlayers[0]!, 4);
+            const partner = eligiblePlayers[partnerIndex];
+            if (!partner) continue;
+            matchPlayers.push(partner);
+            sortedPlayers.splice(sortedPlayers.indexOf(partner), 1);
+
+            const finalPlayers = getEligiblePlayers().slice(0, 2);
+            if (finalPlayers.length < 2) continue;
+            matchPlayers.push(...finalPlayers);
+            finalPlayers.forEach((player) => sortedPlayers.splice(sortedPlayers.indexOf(player), 1));
         } else {
-            if (remaining.length < 1) break;
-            const partnerIndex = selectClosestByRating(remaining, matchPlayers[0]!, 4);
-            matchPlayers.push(...remaining.splice(partnerIndex, 1));
+            const eligiblePlayers = getEligiblePlayers();
+            const partnerIndex = selectClosestByRating(eligiblePlayers, matchPlayers[0]!, 4);
+            const partner = eligiblePlayers[partnerIndex];
+            if (!partner) continue;
+            matchPlayers.push(partner);
+            sortedPlayers.splice(sortedPlayers.indexOf(partner), 1);
         }
 
         const match: SessionMatch = {
             player1: matchPlayers[0]!.username,
             player2: matchPlayers[1]!.username,
-            court: freeCourts[courtIndex],
+            court,
+            isDoubles,
             status: 'ongoing',
             startTime: new Date(),
             score: {
                 team1: 0,
                 team2: 0
             },
-            matchId: `match_${Date.now()}_${freeCourts[courtIndex]}`
+            matchId: `match_${Date.now()}_${court}`
         };
 
         if (isDoubles) {
@@ -239,7 +259,6 @@ const buildWaitingMatches = (players: SessionPlayer[], freeCourts: number[], isD
         }
 
         newMatches.push(match);
-        courtIndex += 1;
     }
 
     return newMatches;
@@ -277,7 +296,8 @@ export const startSession: RequestHandler<ParamsDictionary, unknown, StartSessio
             adminId: new mongoose.Types.ObjectId(req.user.id),
             players: playerObjects,
             matches,
-            isActive: matches.length > 0
+            isActive: matches.length > 0,
+            status: 'active'
         });
 
         await newSession.save();
@@ -297,6 +317,10 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
             return res.status(404).json({ error: 'Session not found' });
         }
 
+        if (session.adminId.toString() !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
         let match = session.matches.find((m) => m.matchId === matchId);
 
         if (!match) {
@@ -307,7 +331,7 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
             return res.status(400).json({ error: 'Match already ended' });
         }
 
-        const requiredPlayers = session.isDoubles
+        const requiredPlayers = (match.isDoubles ?? session.isDoubles)
             ? [match.player1, match.player2, match.player3, match.player4]
             : [match.player1, match.player2];
         if (requiredPlayers.some((player) => !player)) {
@@ -400,7 +424,7 @@ export const endMatch: RequestHandler<ParamsDictionary, unknown, EndMatchBody> =
         });
 
         const freeCourts = getFreeCourts(session);
-        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session.isDoubles);
+        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session);
         if (newMatches.length > 0) {
             session.matches.push(...newMatches);
         }
@@ -443,7 +467,7 @@ export const addPlayerToSession: RequestHandler<ParamsDictionary, unknown, Sessi
 
         const waitingPlayers = getQueuePlayers(session);
         const freeCourts = getFreeCourts(session);
-        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session.isDoubles);
+        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session);
         if (newMatches.length > 0) {
             session.matches.push(...newMatches);
         }
@@ -491,7 +515,7 @@ export const removePlayerFromSession: RequestHandler<ParamsDictionary, unknown, 
 
         const waitingPlayers = getQueuePlayers(session);
         const freeCourts = getFreeCourts(session);
-        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session.isDoubles);
+        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session);
         if (newMatches.length > 0) {
             session.matches.push(...newMatches);
         }
@@ -558,7 +582,7 @@ export const replaceMatchPlayer: RequestHandler<ParamsDictionary, unknown, Repla
 
         const waitingPlayers = getQueuePlayers(session);
         const freeCourts = getFreeCourts(session);
-        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session.isDoubles);
+        const newMatches = buildWaitingMatches(waitingPlayers, freeCourts, session);
         if (newMatches.length > 0) {
             session.matches.push(...newMatches);
         }
@@ -588,6 +612,7 @@ export const endSession: RequestHandler<ParamsDictionary, unknown, EndSessionBod
         }
 
         session.isActive = false;
+        session.status = 'completed';
         session.endedAt = new Date();
         await session.save();
 

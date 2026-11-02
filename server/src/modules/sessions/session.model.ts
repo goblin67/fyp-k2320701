@@ -2,10 +2,15 @@ import mongoose, { Schema, Types } from 'mongoose';
 
 export type MatchStatus = 'ongoing' | 'finished';
 export type PlayerField = 'player1' | 'player2' | 'player3' | 'player4';
+export type PlayFormat = 'singles' | 'doubles';
+export type SessionStatus = 'scheduled' | 'active' | 'completed';
 
 export interface SessionPlayer {
   username: string;
   isGuest: boolean;
+  preferredFormat?: PlayFormat;
+  age?: number;
+  level?: string;
   rating: number;
   rd: number;
   vol: number;
@@ -23,6 +28,7 @@ export interface SessionMatch {
   player3?: string;
   player4?: string;
   court: number;
+  isDoubles?: boolean;
   matchId: string;
   status: MatchStatus;
   startTime: Date;
@@ -37,6 +43,11 @@ export interface SessionRecord {
   numCourts: number;
   isDoubles: boolean;
   isActive: boolean;
+  status?: SessionStatus;
+  scheduledAt?: Date;
+  endsAt?: Date;
+  venue?: string;
+  courtFormats: PlayFormat[];
   adminId: Types.ObjectId;
   players: SessionPlayer[];
   matches: SessionMatch[];
@@ -48,6 +59,9 @@ export type SessionDocument = mongoose.HydratedDocument<SessionRecord>;
 const playerSchema = new Schema<SessionPlayer>({
   username: { type: String, required: true },
   isGuest: { type: Boolean, default: false },
+  preferredFormat: { type: String, enum: ['singles', 'doubles'] },
+  age: Number,
+  level: String,
   rating: { type: Number, default: 1500 },
   rd: { type: Number, default: 350 },
   vol: { type: Number, default: 0.06 },
@@ -60,6 +74,7 @@ const matchSchema = new Schema<SessionMatch>({
   player3: String,
   player4: String,
   court: { type: Number, required: true },
+  isDoubles: Boolean,
   matchId: { type: String, required: true },
   status: { type: String, enum: ['ongoing', 'finished'], default: 'ongoing' },
   startTime: { type: Date, default: Date.now },
@@ -77,6 +92,11 @@ const sessionSchema = new Schema<SessionRecord>({
   numCourts: { type: Number, default: 1 },
   isDoubles: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  status: { type: String, enum: ['scheduled', 'active', 'completed'] },
+  scheduledAt: Date,
+  endsAt: Date,
+  venue: String,
+  courtFormats: { type: [String], enum: ['singles', 'doubles'], default: [] },
   adminId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   players: { type: [playerSchema], default: [] },
   matches: { type: [matchSchema], default: [] },

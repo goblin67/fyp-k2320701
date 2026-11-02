@@ -12,6 +12,7 @@ export interface MatchHistoryEntry {
 export interface UserRecord {
   username: string;
   password: string;
+  role: 'player' | 'organiser';
   age?: number;
   level?: string;
   rating: number;
@@ -34,6 +35,7 @@ const matchHistorySchema = new Schema<MatchHistoryEntry>({
 const userSchema = new Schema<UserRecord>({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  role: { type: String, enum: ['player', 'organiser'], default: 'player' },
   age: Number,
   level: String,
   rating: { type: Number, default: 1500 },

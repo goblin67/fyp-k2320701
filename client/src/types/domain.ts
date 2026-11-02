@@ -16,6 +16,9 @@ export interface UserStats {
 export interface SessionPlayer {
   username: string;
   isGuest: boolean;
+  preferredFormat?: 'singles' | 'doubles';
+  age?: number;
+  level?: string;
   rating: number;
   rd: number;
   vol: number;
@@ -37,6 +40,7 @@ export interface SessionMatch {
   player3?: string;
   player4?: string;
   court: number;
+  isDoubles?: boolean;
   matchId: string;
   status: MatchStatus;
   startTime?: string | Date;
@@ -51,6 +55,11 @@ export interface SessionData {
   numCourts: number;
   isDoubles: boolean;
   isActive: boolean;
+  status?: 'scheduled' | 'active' | 'completed';
+  scheduledAt?: string | Date;
+  endsAt?: string | Date;
+  venue?: string;
+  courtFormats?: ('singles' | 'doubles')[];
   adminId: string;
   players: SessionPlayer[];
   matches: SessionMatch[];

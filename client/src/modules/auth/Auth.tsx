@@ -11,11 +11,12 @@ interface AuthFormData {
 interface AuthResponse {
     token?: string;
     username?: string;
+    role?: 'player' | 'organiser';
     error?: string;
 }
 
 interface AuthProps {
-    onLoginSuccess?: () => void;
+    onLoginSuccess?: (role: 'player' | 'organiser') => void;
 }
 
 const getErrorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Something went wrong';
@@ -49,10 +50,11 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
             if (!res.ok) throw new Error(data.error ?? 'Something went wrong');
 
             if (isLogin) {
-                if (!data.token || !data.username) throw new Error('Invalid login response');
+                if (!data.token || !data.username || !data.role) throw new Error('Invalid login response');
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('username', data.username);
-                if (onLoginSuccess) onLoginSuccess();
+                localStorage.setItem('role', data.role);
+                if (onLoginSuccess) onLoginSuccess(data.role);
                 navigate('/');
             } else {
                 alert("Account created! Please login.");
