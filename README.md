@@ -1,20 +1,17 @@
-# fyp-k2320701
-Final Year Project, Racket Sports player administration module
+# Badminton Session Manager
 
-## Organiser account setup
+A web app for players and session organisers to manage badminton sessions, courts, matches, scores, and results.
 
-Organiser access is assigned to an existing account or a new account through the
-one-time provisioning command. Set `MONGO_DB_URI`, `INITIAL_ORGANISER_USERNAME`
-(defaults to `1234`), and `INITIAL_ORGANISER_PASSWORD` in the server environment.
-Use a private password of at least 8 characters; do not commit it to the
-repository or share it in chat. Then run `npm run create-organiser` from the
-`server` workspace. If the username already exists, the command verifies its
-password before granting organiser access and will not replace that password.
+## Organising a session
 
-All other registered accounts receive the player role. Organisers are routed to
-the session panel after login; planned sessions can be edited until they start.
+Organisers can schedule sessions, choose court formats, add registered players or guests, and start matches from the waiting queue. Each court shows a proposed lineup for approval. Organisers can edit a lineup before starting a match, enter scores, select the winner, and download CSV reports for match summaries or individual player performances.
 
-During a live organiser session, generated lineups remain proposed until approved.
-Organisers can edit lineups, enter each side's points, choose the winner, and
-finish matches to generate the next proposal. Completed sessions include a
-match-by-match and player points summary with a CSV download.
+## How player pairing works
+
+Waiting players are prioritised by how long they have been in the queue. For doubles, the app tries to avoid repeating teammate pairings from the last three completed matches and rearranges players onto different sides when possible.
+
+If a fresh pairing may become possible when an ongoing match ends, the proposal waits for that match to finish. If no eligible ongoing match can release players, the app uses the best available lineup instead of blocking play. Organisers can also edit a proposed lineup manually.
+
+## Development
+
+Install dependencies in the `client` and `server` folders, configure the server environment, then run each app using its development script.
