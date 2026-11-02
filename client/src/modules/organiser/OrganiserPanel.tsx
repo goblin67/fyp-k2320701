@@ -204,43 +204,88 @@ const getSessionTotals = (session: SessionData): PlayerSessionTotals[] => {
     return [...totals.values()].sort((a, b) => b.pointsFor - a.pointsFor || b.wins - a.wins || a.username.localeCompare(b.username));
 };
 
-const downloadSessionCsv = (session: SessionData) => {
-    const totals = getSessionTotals(session);
+const downloadCsv = (session: SessionData, name: string, rows: (string | number)[][]) => {
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${session.title.replace(/[^a-z0-9-_]+/gi, '-')}-${name}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+};
+
+const downloadMatchSummariesCsv = (session: SessionData) => {
     const rows: (string | number)[][] = [[
-        'Record type', 'Match ID', 'Date', 'Court', 'Format', 'Player', 'Side',
-        'Points for', 'Points against', 'Winner', 'Total games', 'Wins',
-        'Session points for', 'Session points against'
+        'Match ID', 'Date', 'Court', 'Format', 'Side 1 players', 'Side 2 players',
+        'Side 1 points', 'Side 2 points', 'Winner'
     ]];
     session.matches.filter((match) => match.status === 'finished').forEach((match) => {
         const team1 = (match.isDoubles ? [match.player1, match.player2] : [match.player1])
             .filter((name): name is string => Boolean(name));
         const team2 = (match.isDoubles ? [match.player3, match.player4] : [match.player2])
             .filter((name): name is string => Boolean(name));
-        [...team1.map((username) => ({ username, side: 'Team 1', pointsFor: match.score.team1, pointsAgainst: match.score.team2 })),
-            ...team2.map((username) => ({ username, side: 'Team 2', pointsFor: match.score.team2, pointsAgainst: match.score.team1 }))]
-            .forEach((entry) => {
-                const playerTotals = totals.find((item) => item.username === entry.username);
-                rows.push([
-                    'Match', match.matchId, match.startTime ? new Date(match.startTime).toISOString() : '',
-                    match.court, match.isDoubles ? 'Doubles' : 'Singles', entry.username, entry.side,
-                    entry.pointsFor, entry.pointsAgainst, match.winner ?? '',
-                    playerTotals?.games ?? 0, playerTotals?.wins ?? 0,
-                    playerTotals?.pointsFor ?? 0, playerTotals?.pointsAgainst ?? 0
-                ]);
-            });
+        rows.push([
+            match.matchId,
+            match.startTime ? new Date(match.startTime).toISOString() : '',
+            match.court,
+            match.isDoubles ? 'Doubles' : 'Singles',
+            team1.join(' & '),
+            team2.join(' & '),
+            match.score.team1,
+            match.score.team2,
+            match.winner ?? ''
+        ]);
     });
-    totals.filter((player) => player.games === 0).forEach((player) => rows.push([
-        'Player total', '', '', '', '', player.username, '', '', '', '',
-        player.games, player.wins, player.pointsFor, player.pointsAgainst
-    ]));
-    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${session.title.replace(/[^a-z0-9-_]+/gi, '-')}-summary.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(session, 'match-summaries', rows);
+};
+
+const downloadPlayerPerformancesCsv = (session: SessionData) => {
+    const totals = new Map(getSessionTotals(session).map((player) => [player.username, player]));
+    const rows: (string | number)[][] = [[
+        'Match ID', 'Date', 'Court', 'Format', 'Player', 'Side',
+        'Points scored', 'Points conceded', 'Won match',
+        'Session games', 'Session wins', 'Session points scored', 'Session points conceded'
+    ]];
+    session.matches.filter((match) => match.status === 'finished').forEach((match) => {
+        const teams = [
+            {
+                side: 'Side 1',
+                players: (match.isDoubles ? [match.player1, match.player2] : [match.player1])
+                    .filter((name): name is string => Boolean(name)),
+                pointsFor: match.score.team1,
+                pointsAgainst: match.score.team2,
+                won: match.winnerTeam === 'team1'
+            },
+            {
+                side: 'Side 2',
+                players: (match.isDoubles ? [match.player3, match.player4] : [match.player2])
+                    .filter((name): name is string => Boolean(name)),
+                pointsFor: match.score.team2,
+                pointsAgainst: match.score.team1,
+                won: match.winnerTeam === 'team2'
+            }
+        ];
+        teams.forEach((team) => team.players.forEach((username) => {
+            const playerTotals = totals.get(username);
+            rows.push([
+                match.matchId,
+                match.startTime ? new Date(match.startTime).toISOString() : '',
+                match.court,
+                match.isDoubles ? 'Doubles' : 'Singles',
+                username,
+                team.side,
+                team.pointsFor,
+                team.pointsAgainst,
+                team.won ? 'Yes' : 'No',
+                playerTotals?.games ?? 0,
+                playerTotals?.wins ?? 0,
+                playerTotals?.pointsFor ?? 0,
+                playerTotals?.pointsAgainst ?? 0
+            ]);
+        }));
+    });
+    downloadCsv(session, 'player-performances', rows);
 };
 
 const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
@@ -1013,7 +1058,10 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                     <button className="organiser-back" type="button" onClick={() => setScreen('sessions')}>← All sessions</button>
                     <div className="organiser-section-heading">
                         <div><span className="organiser-eyebrow">SESSION SUMMARY</span><h2>{selectedSession.title}</h2><p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)} · {selectedSession.matches.filter((match) => match.status === 'finished').length} completed matches</p></div>
-                        <button className="organiser-button" type="button" onClick={() => downloadSessionCsv(selectedSession)}>Download CSV</button>
+                        <div className="organiser-actions">
+                            <button className="organiser-button secondary" type="button" onClick={() => downloadMatchSummariesCsv(selectedSession)}>Download match summaries CSV</button>
+                            <button className="organiser-button" type="button" onClick={() => downloadPlayerPerformancesCsv(selectedSession)}>Download player performances CSV</button>
+                        </div>
                     </div>
                     <section className="organiser-subcard">
                         <h3>Player totals</h3>
