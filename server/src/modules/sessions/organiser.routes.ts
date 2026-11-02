@@ -478,10 +478,8 @@ router.post('/sessions/:id/players', async (req, res) => {
             vol: user?.vol ?? 0.06,
             joinedAt: new Date()
         });
-        if (!session.matches.some((match) => match.status === 'ongoing')) {
-            const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
-            if (newMatches.length) session.matches.push(...newMatches);
-        }
+        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+        if (newMatches.length) session.matches.push(...newMatches);
         session.isActive = true;
         await session.save();
         res.status(201).json(session);
@@ -504,7 +502,7 @@ router.post('/sessions/:id/matches/:matchId/start', async (req, res) => {
             return;
         }
         if (match.awaitingNextFinish && !match.manualOverride) {
-            res.status(409).json({ error: 'This lineup repeats a recent pairing. Wait for another match to finish or edit the lineup to approve it manually.' });
+            res.status(409).json({ error: 'Players in this lineup have played together recently. Wait for another match to finish or edit the lineup to approve it manually.' });
             return;
         }
         const fields = getMatchFields(match);
@@ -659,11 +657,8 @@ router.post('/sessions/:id/matches/:matchId/finish', async (req, res) => {
         session.matches = session.matches.filter((item) =>
             item.status !== 'proposed' || item.manualOverride
         );
-        const anotherMatchIsOngoing = session.matches.some((item) => item.status === 'ongoing');
-        if (!anotherMatchIsOngoing) {
-            const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
-            if (newMatches.length) session.matches.push(...newMatches);
-        }
+        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+        if (newMatches.length) session.matches.push(...newMatches);
         session.isActive = true;
         await session.save();
         res.json(session);

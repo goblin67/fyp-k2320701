@@ -240,11 +240,12 @@ const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
         .slice(0, 3);
     const pairs = new Set<string>();
     for (const match of recentMatches) {
-        const teams = match.isDoubles
-            ? [[match.player1, match.player2], [match.player3, match.player4]]
-            : [[match.player1, match.player2]];
-        for (const [first, second] of teams) {
-            if (first && second) pairs.add([first, second].sort().join('\u0000'));
+        const players = [match.player1, match.player2, match.player3, match.player4]
+            .filter((username): username is string => Boolean(username));
+        for (let first = 0; first < players.length - 1; first += 1) {
+            for (let second = first + 1; second < players.length; second += 1) {
+                pairs.add([players[first]!, players[second]!].sort().join('\u0000'));
+            }
         }
     }
     return pairs;
@@ -279,25 +280,33 @@ const choosePlayersForMatch = (
     }
 
     let bestSelection: SessionPlayer[] | null = null;
-    let fewestRepeatPartners = Number.POSITIVE_INFINITY;
+    let fewestRecentPairRepeats = Number.POSITIVE_INFINITY;
     for (let first = 0; first < candidates.length - 3; first += 1) {
         for (let second = first + 1; second < candidates.length - 2; second += 1) {
             for (let third = second + 1; third < candidates.length - 1; third += 1) {
                 for (let fourth = third + 1; fourth < candidates.length; fourth += 1) {
                     const group = [candidates[first]!, candidates[second]!, candidates[third]!, candidates[fourth]!];
+                    let recentPairRepeats = 0;
+                    for (let left = 0; left < group.length - 1; left += 1) {
+                        for (let right = left + 1; right < group.length; right += 1) {
+                            if (recentPairs.has(pairKey(group[left]!, group[right]!))) {
+                                recentPairRepeats += 1;
+                            }
+                        }
+                    }
+                    if (recentPairRepeats > fewestRecentPairRepeats) continue;
+
                     const teamArrangements = [
                         [group[0]!, group[1]!, group[2]!, group[3]!],
                         [group[0]!, group[2]!, group[1]!, group[3]!],
                         [group[0]!, group[3]!, group[1]!, group[2]!]
                     ];
                     for (const arrangement of teamArrangements) {
-                        const repeatPartners = Number(recentPairs.has(pairKey(arrangement[0]!, arrangement[1]!))) +
-                            Number(recentPairs.has(pairKey(arrangement[2]!, arrangement[3]!)));
-                        if (repeatPartners < fewestRepeatPartners) {
+                        if (recentPairRepeats < fewestRecentPairRepeats) {
                             bestSelection = arrangement;
-                            fewestRepeatPartners = repeatPartners;
+                            fewestRecentPairRepeats = recentPairRepeats;
                         }
-                        if (repeatPartners === 0) return { players: arrangement, awaitingNextFinish: false };
+                        if (recentPairRepeats === 0) return { players: arrangement, awaitingNextFinish: false };
                     }
                 }
             }
@@ -307,7 +316,7 @@ const choosePlayersForMatch = (
     if (!bestSelection) return null;
     return {
         players: bestSelection,
-        awaitingNextFinish: fewestRepeatPartners > 0 && canWaitForAnotherMatch
+        awaitingNextFinish: fewestRecentPairRepeats > 0 && canWaitForAnotherMatch
     };
 };
 
