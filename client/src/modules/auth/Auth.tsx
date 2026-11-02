@@ -12,11 +12,12 @@ interface AuthResponse {
     token?: string;
     username?: string;
     role?: 'player' | 'organiser';
+    organiserAccess?: boolean;
     error?: string;
 }
 
 interface AuthProps {
-    onLoginSuccess?: (role: 'player' | 'organiser') => void;
+    onLoginSuccess?: (role: 'player' | 'organiser', organiserAccess: boolean) => void;
 }
 
 const getErrorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Something went wrong';
@@ -54,7 +55,9 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('username', data.username);
                 localStorage.setItem('role', data.role);
-                if (onLoginSuccess) onLoginSuccess(data.role);
+                const organiserAccess = data.organiserAccess ?? data.role === 'organiser';
+                localStorage.setItem('organiserAccess', String(organiserAccess));
+                if (onLoginSuccess) onLoginSuccess(data.role, organiserAccess);
                 navigate('/');
             } else {
                 alert("Account created! Please login.");

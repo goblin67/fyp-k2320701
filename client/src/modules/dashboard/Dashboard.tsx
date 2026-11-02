@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
+import OrganiserPanel from '../organiser/OrganiserPanel';
 
 type DashboardView = 'overview' | 'active-match' | 'session-summary' | 'leaderboard' | 'settings' | 'match-history' | 'session-history';
 
@@ -22,14 +23,16 @@ interface ErrorResponse {
 
 interface DashboardProps {
     onLogout: () => void;
+    hasOrganiserAccess: boolean;
 }
 
 const getErrorMessage = (error: unknown): string => error instanceof Error ? error.message : 'An unexpected error occurred';
 
 const readJson = async <T,>(response: Response): Promise<T> => response.json() as Promise<T>;
 
-const Dashboard = ({ onLogout }: DashboardProps) => {
+const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
+    const [showOrganiserPanel, setShowOrganiserPanel] = useState(false);
     const [userStats, setUserStats] = useState<UserStats>({ elo: 1500, username: '', matchHistory: [] });
     const [loading, setLoading] = useState(true);
     const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
@@ -413,6 +416,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
     const sessionToShow = selectedSession || activeSession;
 
+    if (showOrganiserPanel) {
+        return (
+            <OrganiserPanel
+                onLogout={onLogout}
+                onBackToDashboard={() => setShowOrganiserPanel(false)}
+            />
+        );
+    }
+
     if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>Connecting to CourtSync...</div>;
 
     return (
@@ -559,7 +571,11 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                         fetchSessionHistory();
                         setView('session-history');
                     }}>Session History</button>
-                    <a className="beta-unlock" href="mailto:miscellaneousaffairs21@gmail.com?subject=Request%20access%20to%20session%20creation%20beta">Unlock beta</a>
+                    {hasOrganiserAccess ? (
+                        <button className="beta-unlock" type="button" onClick={() => setShowOrganiserPanel(true)}>Organiser panel</button>
+                    ) : (
+                        <a className="beta-unlock" href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">Unlock beta</a>
+                    )}
                     <button className={view === 'settings' ? 'active' : ''} onClick={() => {
                         setSelectedSession(null);
                         setView('settings');
@@ -573,7 +589,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                         </button>
                     )}
                 </nav>
-                <p className="beta-access-note">Session creation is in beta. Email <a href="mailto:miscellaneousaffairs21@gmail.com">miscellaneousaffairs21@gmail.com</a> to request access.</p>
+                {!hasOrganiserAccess && <p className="beta-access-note">To request session creation beta access, email <a href="mailto:miscellaneousaffairs21@gmail.com?subject=Session%20Creation%20Beta%20Access%20Request">miscellaneousaffairs21@gmail.com</a> with the subject <strong>Session Creation Beta Access Request</strong>.</p>}
 
                 <section className="hero-card">
                     <div>

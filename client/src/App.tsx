@@ -10,12 +10,15 @@ function App() {
   const [role, setRole] = useState<'player' | 'organiser'>(() =>
     localStorage.getItem('role') === 'organiser' ? 'organiser' : 'player'
   );
+  const [organiserAccess, setOrganiserAccess] = useState(() => localStorage.getItem('organiserAccess') === 'true');
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
     localStorage.removeItem('role');
+    localStorage.removeItem('organiserAccess');
     setIsAuthenticated(false);
     setRole('player');
+    setOrganiserAccess(false);
   };
 
   return (
@@ -26,15 +29,16 @@ function App() {
           element={isAuthenticated
             ? role === 'organiser'
               ? <OrganiserPanel onLogout={handleLogout} />
-              : <Dashboard onLogout={handleLogout} />
+              : <Dashboard onLogout={handleLogout} hasOrganiserAccess={organiserAccess} />
             : <Navigate to="/auth" replace />}
         />
         <Route
           path="/auth"
           element={isAuthenticated
             ? <Navigate to="/" replace />
-            : <Auth onLoginSuccess={(nextRole) => {
+            : <Auth onLoginSuccess={(nextRole, nextOrganiserAccess) => {
               setRole(nextRole);
+              setOrganiserAccess(nextOrganiserAccess);
               setIsAuthenticated(true);
             }} />}
         />

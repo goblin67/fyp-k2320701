@@ -24,6 +24,7 @@ interface PlayerSelection {
 
 interface OrganiserPanelProps {
     onLogout: () => void;
+    onBackToDashboard?: () => void;
 }
 
 interface ApiError {
@@ -288,7 +289,7 @@ const downloadPlayerPerformancesCsv = (session: SessionData) => {
     downloadCsv(session, 'player-performances', rows);
 };
 
-const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
+const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) => {
     const [screen, setScreen] = useState<Screen>('sessions');
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
@@ -669,7 +670,12 @@ const OrganiserPanel = ({ onLogout }: OrganiserPanelProps) => {
                     <h1>Session control</h1>
                     <p>Plan your sessions, prepare courts, and manage the player roster.</p>
                 </div>
-                <button className="organiser-button secondary" type="button" onClick={onLogout}>Log out</button>
+                <div className="organiser-actions">
+                    {onBackToDashboard && (
+                        <button className="organiser-button secondary" type="button" onClick={onBackToDashboard}>Player dashboard</button>
+                    )}
+                    <button className="organiser-button secondary" type="button" onClick={onLogout}>Log out</button>
+                </div>
             </header>
 
             {error && <div className="organiser-error" role="alert">{error}</div>}

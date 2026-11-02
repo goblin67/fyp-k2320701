@@ -22,6 +22,7 @@ interface AuthResponse {
     token?: string;
     username?: string;
     role?: 'player' | 'organiser';
+    organiserAccess?: boolean;
 }
 
 const router = express.Router();
@@ -91,7 +92,12 @@ const login: RequestHandler<Record<string, never>, AuthResponse, LoginRequest> =
                 return;
             }
             const token = jwt.sign({ id: user._id.toString(), username: user.username }, secret);
-            res.json({ token, username: user.username, role: user.role ?? 'player' });
+            res.json({
+                token,
+                username: user.username,
+                role: user.role ?? 'player',
+                organiserAccess: user.role === 'organiser' || user.organiserAccess
+            });
         } else {
             res.status(401).json({ error: "Invalid credentials" });
         }

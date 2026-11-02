@@ -3,8 +3,8 @@ import User from '../users/user.model.js';
 
 const organiserMiddleware: RequestHandler = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id).select('role');
-        if (!user || user.role !== 'organiser') {
+        const user = await User.findById(req.user.id).select('role organiserAccess');
+        if (!user || (user.role !== 'organiser' && !user.organiserAccess)) {
             res.status(403).json({ error: 'Organiser access required' });
             return;
         }
