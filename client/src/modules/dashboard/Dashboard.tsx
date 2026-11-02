@@ -21,6 +21,7 @@ interface SessionResponse {
 
 interface ErrorResponse {
     error?: string;
+    msg?: string;
 }
 
 interface DashboardProps {
@@ -229,11 +230,13 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
 
         setAccountActionBusy(true);
         try {
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('Your session has expired. Please log in again.');
             const response = await fetch(`${API_URL}/api/users/me/password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `******'token')}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ currentPassword, newPassword })
             });
@@ -255,12 +258,14 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         setAccountActionMessage('');
         setAccountActionBusy(true);
         try {
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('Your session has expired. Please log in again.');
             const response = await fetch(`${API_URL}/api/users/me/export`, {
-                headers: { 'Authorization': `******'token')}` }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!response.ok) {
                 const result = await readJson<ErrorResponse>(response);
-                throw new Error(result.error ?? 'Could not export account data.');
+                throw new Error(result.error ?? result.msg ?? 'Could not export account data.');
             }
             const downloadUrl = URL.createObjectURL(await response.blob());
             const link = document.createElement('a');
@@ -290,11 +295,13 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
 
         setAccountActionBusy(true);
         try {
+            const token = localStorage.getItem('token');
+            if (!token) throw new Error('Your session has expired. Please log in again.');
             const response = await fetch(`${API_URL}/api/users/me`, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `******'token')}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ password: deletePassword, confirmation: deleteConfirmation })
             });
