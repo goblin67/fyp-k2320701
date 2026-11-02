@@ -20,11 +20,15 @@ interface ErrorResponse {
     error?: string;
 }
 
+interface DashboardProps {
+    onLogout: () => void;
+}
+
 const getErrorMessage = (error: unknown): string => error instanceof Error ? error.message : 'An unexpected error occurred';
 
 const readJson = async <T,>(response: Response): Promise<T> => response.json() as Promise<T>;
 
-const Dashboard = () => {
+const Dashboard = ({ onLogout }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
     const [userStats, setUserStats] = useState<UserStats>({ elo: 1500, username: '', matchHistory: [] });
     const [loading, setLoading] = useState(true);
@@ -403,6 +407,7 @@ const Dashboard = () => {
 
     const handleLogout = () => {
         localStorage.removeItem('token');
+        onLogout();
         navigate('/auth');
     };
 
