@@ -489,6 +489,43 @@ router.post('/sessions/:id/players', async (req, res) => {
     }
 });
 
+router.patch('/sessions/:id/courts', async (req, res) => {
+    try {
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        if (!session.isActive) {
+            res.status(409).json({ error: 'Courts can only be changed during a live session' });
+            return;
+        }
+
+        const { courtFormats } = req.body as { courtFormats?: unknown };
+        if (!Array.isArray(courtFormats) || courtFormats.length < 1 || courtFormats.length > 6 || !courtFormats.every(isFormat)) {
+            res.status(400).json({ error: 'Choose a format for each of 1 to 6 courts' });
+            return;
+        }
+        if (session.matches.some((match) => match.status === 'ongoing' && match.court > courtFormats.length)) {
+            res.status(409).json({ error: 'Finish the match on the highest-numbered court before removing that court' });
+            return;
+        }
+
+        session.matches = session.matches.filter((match) => match.status !== 'proposed');
+        session.courtFormats = courtFormats;
+        session.numCourts = courtFormats.length;
+        session.isDoubles = courtFormats.every((format) => format === 'doubles');
+        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+        if (newMatches.length) session.matches.push(...newMatches);
+
+        await session.save();
+        res.json(session);
+    } catch (error) {
+        console.error('ORGANISER COURT UPDATE ERROR:', error);
+        res.status(500).json({ error: 'Could not update session courts' });
+    }
+});
+
 router.post('/sessions/:id/matches/:matchId/start', async (req, res) => {
     try {
         const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });

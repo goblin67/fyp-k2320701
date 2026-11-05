@@ -238,6 +238,7 @@ const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
         .filter((match) => match.status === 'finished')
         .sort((a, b) => new Date(b.finishedAt ?? b.startTime ?? 0).getTime() - new Date(a.finishedAt ?? a.startTime ?? 0).getTime())
         .slice(0, 3);
+    if (recentMatches.length < 3) return new Set();
     const pairs = new Set<string>();
     for (const match of recentMatches) {
         const players = [match.player1, match.player2, match.player3, match.player4]

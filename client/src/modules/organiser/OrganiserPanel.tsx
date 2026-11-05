@@ -696,6 +696,23 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         }
     };
 
+    const updateLiveCourtFormats = async (nextFormats: Format[]) => {
+        if (!selectedSession) return;
+        setBusy(true);
+        setError('');
+        try {
+            const updated = await apiRequest<SessionData>(`/sessions/${selectedSession._id}/courts`, {
+                method: 'PATCH',
+                body: JSON.stringify({ courtFormats: nextFormats })
+            });
+            upsertSession(updated);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const addGuestToLiveSession = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!selectedSession) return;
@@ -842,8 +859,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const finishLiveMatch = async (match: SessionMatch) => {
         if (!selectedSession) return;
         const score = scoreEdits[match.matchId] ?? {
-            team1: String(match.score.team1),
-            team2: String(match.score.team2)
+            team1: '',
+            team2: ''
         };
         const winnerTeam = winnerEdits[match.matchId] ?? match.winnerTeam;
         if (!winnerTeam) {
@@ -1240,6 +1257,35 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         </div>
                         <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
                     </div>
+                    <section className="organiser-subcard">
+                        <div className="organiser-section-heading">
+                            <div><h3>Courts</h3></div>
+                            <label>Number of courts
+                                <select className="organiser-court-count" aria-label="Number of live courts" value={courts.length} disabled={busy} onChange={(event) => {
+                                    const count = Number(event.target.value);
+                                    const nextFormats = Array.from({ length: count }, (_, index) => (courts[index] ?? 'singles') as Format);
+                                    void updateLiveCourtFormats(nextFormats);
+                                }}>
+                                    {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} {count === 1 ? 'court' : 'courts'}</option>)}
+                                </select>
+                            </label>
+                        </div>
+                        <div className="organiser-court-grid">
+                            {courts.map((format, index) => (
+                                <label className="organiser-court-setup" key={index}>Court {index + 1} format
+                                    <select value={format} disabled={busy} onChange={(event) => {
+                                        const nextFormats = courts.map((currentFormat, courtIndex) =>
+                                            courtIndex === index ? event.target.value as Format : currentFormat as Format
+                                        );
+                                        void updateLiveCourtFormats(nextFormats);
+                                    }}>
+                                        <option value="singles">Singles</option>
+                                        <option value="doubles">Doubles</option>
+                                    </select>
+                                </label>
+                            ))}
+                        </div>
+                    </section>
                     <div className="organiser-court-grid live">
                         {courts.map((format, index) => {
                             const match = courtMatches.find((item) => item.court === index + 1);
@@ -1251,8 +1297,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 : ['player1', 'player2'] as const;
                             const lineup = lineupEdits[match.matchId] ?? getLineup(match);
                             const score = scoreEdits[match.matchId] ?? {
-                                team1: String(match.score.team1),
-                                team2: String(match.score.team2)
+                                team1: '',
+                                team2: ''
                             };
                             const winnerTeam = winnerEdits[match.matchId] ?? match.winnerTeam ?? '';
                             const team1 = (match.isDoubles ? [lineup[0], lineup[1]] : [lineup[0]])
