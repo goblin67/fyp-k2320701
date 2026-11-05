@@ -28,9 +28,22 @@ ELO-style ratings are maintained by the backend and used for ranking, but are no
 - Download ranked session summaries.
 - View a Player Stats leaderboard for registered players who have participated in the organiser's sessions, including rating and lifetime performance statistics.
 - Export the organiser's leaderboard and individual players' lifetime match histories.
-- Create and rename clubs, rotate shareable invite codes, approve membership requests, and manage separate club rosters and sessions.
+- Create and rename clubs, choose allowed and default session formats per club, rotate shareable invite codes, approve membership requests, and manage separate club rosters and sessions.
 
 Guest participation remains scoped to its session and is not included in registered players' all-time leaderboard/history.
+
+### New organiser: quick start
+
+Follow these steps the first time you use the organiser panel. If someone has already given you a username and password, you do not need to run any setup command.
+
+1. **Sign in.** Open CourtSync, choose **Login**, and enter the organiser username and password you were given. You should land in the organiser workspace.
+2. **Choose or create a club.** Open **Manage clubs**. Each club has **Enter club**, **Rename**, and **Members & settings** actions. Use **Create club** to add another club. To delete a club, first delete its planned/completed sessions and remove its members. You must keep at least one club.
+3. **Set club rules and invite code.** Open **Members & settings** for the club. Rename it from the club list. Under **Session formats**, choose which formats the club allows and its default. For a doubles-only club, leave **Doubles** selected and save; preference and court format choices will be hidden. Under **Invite code**, generate a code if needed and share it with players. Rotating a code invalidates the old one.
+4. **Approve players.** Players choose your club and enter its code when registering, or request to join later in account settings. In **Members & settings**, approve requests you accept and reject the others. Only approved members appear in the club's player list. You can remove a member from the same page. Players can also belong to multiple clubs.
+5. **Enter the club and plan a session.** Choose **Enter club**, then open **Club sessions** and choose **New session**. Enter a session name, date and time, and optionally a venue; save it. Open the planned session and choose **Start session** when you are ready to set it up.
+6. **Choose players and courts.** Select approved club players, or add guests for this session. Set each player's singles or doubles preference. Choose 1–6 courts and set each court's format, then choose **Start session**. You can edit the session plan until it starts.
+7. **Run the courts.** Proposed lineups appear on the live page. Review them, make any needed changes with **Edit proposed players**, then choose **Approve & start match**. While a match is playing, enter both sides' scores, choose the winning side, and select **Save score & end match**. New lineups are proposed as players become available. Add an approved club member or a guest from the live page if someone arrives late. You can also change the number or format of courts while the session is live; finish a match before removing its court.
+8. **Finish up.** When play is over, choose **End session** and confirm. The session summary shows player totals and match results. Use the CSV buttons if you want to download the results. You can return to the summary later from the session list.
 
 ### Match assignment and rankings
 

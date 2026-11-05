@@ -123,18 +123,90 @@
     align-items: end;
 }
 
-.organiser-club-rename {
+.organiser-create-club {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
-    margin: 0 0 18px;
-    padding: 16px;
-    border: 1px solid rgba(135, 159, 174, 0.18);
-    border-radius: 8px;
-    background: rgba(7, 13, 17, 0.38);
+    max-width: 700px;
+    margin-bottom: 24px;
 }
 
-.organiser-club-rename button {
-    min-height: 42px;
+.organiser-club-list {
+    display: grid;
+    gap: 12px;
+}
+
+.organiser-club-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px;
+    border: 1px solid rgba(135, 159, 174, 0.24);
+    border-radius: 8px;
+    background: rgba(7, 13, 17, 0.48);
+}
+
+.organiser-club-card h3 {
+    margin: 5px 0;
+}
+
+.organiser-club-card p {
+    margin: 0;
+    color: #9aabb2;
+}
+
+.organiser-club-delete-help {
+    display: block;
+    margin-top: 7px;
+    color: #d7bd85;
+}
+
+.organiser-club-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.organiser-club-new-code {
+    display: grid;
+    justify-items: start;
+    gap: 7px;
+    margin: -8px 0 20px;
+    color: #c8f169;
+}
+
+.organiser-club-new-code span {
+    padding: 8px 11px;
+    border: 1px dashed #c8f169;
+    border-radius: 5px;
+    background: #0b1216;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    user-select: all;
+}
+
+.organiser-club-card-rename {
+    width: 100%;
+}
+
+.organiser-club-format-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+}
+
+.organiser-club-format-options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.organiser-club-format-options input {
+    width: auto;
+    min-height: 0;
+    accent-color: #c8f169;
 }
 
 .organiser-club-code {
@@ -853,6 +925,20 @@
 
     .organiser-workspace-nav button {
         flex: 1 1 180px;
+    }
+
+    .organiser-club-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .organiser-club-card-actions {
+        justify-content: flex-start;
+    }
+
+    .organiser-create-club,
+    .organiser-club-card-rename {
+        grid-template-columns: 1fr;
     }
 
     .organiser-actions {

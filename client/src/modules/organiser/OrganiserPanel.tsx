@@ -4,7 +4,7 @@ import './organiser.css';
 
 type Format = 'singles' | 'doubles';
 type PlayerKind = 'account' | 'guest';
-type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary' | 'player-stats' | 'clubs';
+type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary' | 'player-stats' | 'clubs' | 'club-settings';
 type MatchLineup = [string, string, string?, string?];
 
 interface PlayerAccount {
@@ -19,6 +19,10 @@ interface OrganiserClub {
     name: string;
     isDefault: boolean;
     hasInviteCode: boolean;
+    allowedFormats: Format[];
+    defaultFormat: Format;
+    sessionCount: number;
+    memberCount: number;
     inviteCode?: string;
 }
 
@@ -492,12 +496,16 @@ const downloadPlayerPerformancesCsv = (session: SessionData) => {
 };
 
 const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) => {
-    const [screen, setScreen] = useState<Screen>('sessions');
+    const [screen, setScreen] = useState<Screen>('clubs');
     const [clubs, setClubs] = useState<OrganiserClub[]>([]);
     const [selectedClubId, setSelectedClubId] = useState('');
     const [pendingMembers, setPendingMembers] = useState<ClubMember[]>([]);
+    const [approvedMembers, setApprovedMembers] = useState<ClubMember[]>([]);
+    const [editingClubId, setEditingClubId] = useState('');
     const [newClubName, setNewClubName] = useState('');
     const [clubNameDraft, setClubNameDraft] = useState('');
+    const [allowedFormatsDraft, setAllowedFormatsDraft] = useState<Format[]>(['singles', 'doubles']);
+    const [defaultFormatDraft, setDefaultFormatDraft] = useState<Format>('singles');
     const [inviteCode, setInviteCode] = useState('');
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
@@ -525,6 +533,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [winnerEdits, setWinnerEdits] = useState<Record<string, 'team1' | 'team2'>>({});
     const [clockNow, setClockNow] = useState(0);
     const [liveSessionStartedAt, setLiveSessionStartedAt] = useState<Record<string, number>>({});
+    const selectedClub = clubs.find((club) => club.id === selectedClubId);
+    const fixedClubFormat = selectedClub?.allowedFormats.length === 1 ? selectedClub.allowedFormats[0] : undefined;
 
     useEffect(() => {
         let cancelled = false;
@@ -535,6 +545,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     setClubs(clubData);
                     setSelectedClubId(clubData[0]?.id ?? '');
                     setClubNameDraft(clubData[0]?.name ?? '');
+                    setAllowedFormatsDraft(clubData[0]?.allowedFormats ?? ['singles', 'doubles']);
+                    setDefaultFormatDraft(clubData[0]?.defaultFormat ?? 'singles');
                     if (!clubData.length) setLoading(false);
                 }
             } catch (requestError) {
@@ -555,15 +567,17 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             setLoading(true);
             try {
                 const query = `?clubId=${encodeURIComponent(selectedClubId)}`;
-                const [sessionData, accountData, pendingData] = await Promise.all([
+                const [sessionData, accountData, pendingData, approvedData] = await Promise.all([
                     apiRequest<SessionData[]>(`/sessions${query}`),
                     apiRequest<PlayerAccount[]>(`/players${query}`),
-                    apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`)
+                    apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`),
+                    apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=approved`)
                 ]);
                 if (!cancelled) {
                     setSessions(sessionData);
                     setPlayerAccounts(accountData);
                     setPendingMembers(pendingData);
+                    setApprovedMembers(approvedData);
                 }
             } catch (requestError) {
                 if (!cancelled) setError(getErrorMessage(requestError));
@@ -605,6 +619,10 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
     const changeActiveClub = (clubId: string) => {
         setSelectedClubId(clubId);
+        const club = clubs.find((item) => item.id === clubId);
+        setClubNameDraft(club?.name ?? '');
+        setAllowedFormatsDraft(club?.allowedFormats ?? ['singles', 'doubles']);
+        setDefaultFormatDraft(club?.defaultFormat ?? 'singles');
         setSelectedSession(null);
         setFormMode(null);
         setInviteCode('');
@@ -621,13 +639,16 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 method: 'POST',
                 body: JSON.stringify({ name: newClubName.trim() })
             });
-            setClubs((current) => [...current, club].sort((a, b) =>
+            const createdClub = { ...club, sessionCount: 0, memberCount: 0 };
+            setClubs((current) => [...current, createdClub].sort((a, b) =>
                 Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name)
             ));
             setNewClubName('');
-            setInviteCode(club.inviteCode ?? '');
-            setSelectedClubId(club.id);
-            setClubNameDraft(club.name);
+            setInviteCode(createdClub.inviteCode ?? '');
+            setSelectedClubId(createdClub.id);
+            setClubNameDraft(createdClub.name);
+            setAllowedFormatsDraft(createdClub.allowedFormats);
+            setDefaultFormatDraft(createdClub.defaultFormat);
             setNotice('Club created. Copy and share this invite code; it will not be shown again.');
         } catch (requestError) {
             setError(getErrorMessage(requestError));
@@ -636,20 +657,89 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         }
     };
 
-    const renameClub = async (event: FormEvent<HTMLFormElement>) => {
+    const renameClub = async (event: FormEvent<HTMLFormElement>, clubId = selectedClubId) => {
+        event.preventDefault();
+        if (!clubId) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const club = await apiRequest<OrganiserClub>(`/clubs/${clubId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ name: clubNameDraft.trim() })
+            });
+            setClubs((current) => current.map((item) => item.id === club.id ? { ...item, name: club.name } : item));
+            setClubNameDraft(club.name);
+            setEditingClubId('');
+            setNotice('Club name updated.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const deleteClub = async (club: OrganiserClub) => {
+        if (club.sessionCount || club.memberCount) {
+            setError('Delete the club’s sessions and remove its members before deleting the club.');
+            return;
+        }
+        if (clubs.length <= 1) {
+            setError('Create another club before deleting your last club.');
+            return;
+        }
+        if (!window.confirm(`Delete "${club.name}"? This cannot be undone.`)) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            await apiRequest<{ message: string }>(`/clubs/${club.id}`, { method: 'DELETE' });
+            const remainingClubs = clubs.filter((item) => item.id !== club.id);
+            setClubs(remainingClubs);
+            setEditingClubId((current) => current === club.id ? '' : current);
+            if (selectedClubId === club.id) {
+                const nextClub = remainingClubs[0];
+                setSelectedClubId(nextClub.id);
+                setClubNameDraft(nextClub.name);
+                setAllowedFormatsDraft(nextClub.allowedFormats);
+                setDefaultFormatDraft(nextClub.defaultFormat);
+                setSelectedSession(null);
+                setScreen('clubs');
+            }
+            setNotice(`"${club.name}" was deleted.`);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const saveClubFormatSettings = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!selectedClubId) return;
         setBusy(true);
         setError('');
         setNotice('');
         try {
-            const club = await apiRequest<OrganiserClub>(`/clubs/${selectedClubId}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ name: clubNameDraft.trim() })
-            });
-            setClubs((current) => current.map((item) => item.id === club.id ? { ...item, ...club } : item));
-            setClubNameDraft(club.name);
-            setNotice('Club name updated.');
+            const settings = await apiRequest<{ allowedFormats: Format[]; defaultFormat: Format }>(
+                `/clubs/${selectedClubId}/settings`,
+                {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        allowedFormats: allowedFormatsDraft,
+                        defaultFormat: defaultFormatDraft
+                    })
+                }
+            );
+            setClubs((current) => current.map((club) =>
+                club.id === selectedClubId ? { ...club, ...settings } : club
+            ));
+            setAllowedFormatsDraft(settings.allowedFormats);
+            setDefaultFormatDraft(settings.defaultFormat);
+            setCourtFormats((current) => current.map((format) =>
+                settings.allowedFormats.includes(format) ? format : settings.defaultFormat
+            ));
+            setNotice('Club session format settings saved.');
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -683,13 +773,41 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         setNotice('');
         try {
             await apiRequest<{ message: string }>(`/clubs/${selectedClubId}/members/${member.userId}/approve`, { method: 'PATCH' });
-            const [pendingData, accountData] = await Promise.all([
+            const [pendingData, accountData, approvedData] = await Promise.all([
                 apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`),
-                apiRequest<PlayerAccount[]>(`/players?clubId=${encodeURIComponent(selectedClubId)}`)
+                apiRequest<PlayerAccount[]>(`/players?clubId=${encodeURIComponent(selectedClubId)}`),
+                apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=approved`)
             ]);
             setPendingMembers(pendingData);
             setPlayerAccounts(accountData);
+            setApprovedMembers(approvedData);
             setNotice(`${member.username} approved for ${clubs.find((club) => club.id === selectedClubId)?.name ?? 'the club'}.`);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const removeClubMember = async (member: ClubMember) => {
+        if (!selectedClubId) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            await apiRequest<{ message: string }>(`/clubs/${selectedClubId}/members/${member.userId}`, { method: 'DELETE' });
+            const [pendingData, accountData, approvedData] = await Promise.all([
+                apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`),
+                apiRequest<PlayerAccount[]>(`/players?clubId=${encodeURIComponent(selectedClubId)}`),
+                apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=approved`)
+            ]);
+            setPendingMembers(pendingData);
+            setPlayerAccounts(accountData);
+            setApprovedMembers(approvedData);
+            setClubs((current) => current.map((club) =>
+                club.id === selectedClubId ? { ...club, memberCount: Math.max(0, club.memberCount - 1) } : club
+            ));
+            setNotice(`${member.username} was removed from the club.`);
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -730,6 +848,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             const updated = formMode === 'edit' && selectedSession
                 ? await apiRequest<SessionData>(`/sessions/${selectedSession._id}`, { method: 'PATCH', body: JSON.stringify(body) })
                 : await apiRequest<SessionData>('/sessions', { method: 'POST', body: JSON.stringify(body) });
+            if (formMode === 'create') {
+                setClubs((current) => current.map((club) =>
+                    club.id === selectedClubId ? { ...club, sessionCount: club.sessionCount + 1 } : club
+                ));
+            }
             upsertSession(updated);
             setFormMode(null);
             setScreen('details');
@@ -742,8 +865,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
     const beginSessionSetup = () => {
         if (!selectedSession) return;
+        const defaultFormat = selectedClub?.defaultFormat ?? 'singles';
         setSelectedPlayers([]);
-        setCourtFormats(['singles']);
+        setCourtFormats([defaultFormat]);
+        setNewPlayer((current) => ({ ...current, preferredFormat: defaultFormat }));
+        setNewGuest((current) => ({ ...current, preferredFormat: defaultFormat }));
         setScreen('setup');
         setError('');
     };
@@ -770,11 +896,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         setSelectedPlayers((current) => [...current, {
             username,
             kind: 'guest',
-            preferredFormat: newGuest.preferredFormat,
+            preferredFormat: fixedClubFormat ?? newGuest.preferredFormat,
             age: newGuest.age ? Number(newGuest.age) : undefined,
             level: newGuest.level
         }]);
-        setNewGuest({ username: '', age: '', level: 'Beginner', preferredFormat: 'singles' });
+        setNewGuest({ username: '', age: '', level: 'Beginner', preferredFormat: selectedClub?.defaultFormat ?? 'singles' });
         setError('');
     };
 
@@ -793,11 +919,14 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     level: newPlayer.level
                 })
             });
+            setClubs((current) => current.map((club) =>
+                club.id === selectedClubId ? { ...club, memberCount: club.memberCount + 1 } : club
+            ));
 
             const selection: PlayerSelection = {
                 username: registeredPlayer.username,
                 kind: 'account',
-                preferredFormat: newPlayer.preferredFormat,
+                preferredFormat: fixedClubFormat ?? newPlayer.preferredFormat,
                 age: registeredPlayer.age,
                 level: registeredPlayer.level
             };
@@ -812,7 +941,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 });
                 upsertSession(updated);
             }
-            setNewPlayer({ username: '', password: '', age: '', level: 'Beginner', preferredFormat: 'singles' });
+            setNewPlayer({ username: '', password: '', age: '', level: 'Beginner', preferredFormat: selectedClub?.defaultFormat ?? 'singles' });
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -867,13 +996,13 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 body: JSON.stringify({
                     username: newGuest.username.trim(),
                     kind: 'guest',
-                    preferredFormat: newGuest.preferredFormat,
+                    preferredFormat: fixedClubFormat ?? newGuest.preferredFormat,
                     age: newGuest.age ? Number(newGuest.age) : undefined,
                     level: newGuest.level
                 })
             });
             upsertSession(updated);
-            setNewGuest({ username: '', age: '', level: 'Beginner', preferredFormat: 'singles' });
+            setNewGuest({ username: '', age: '', level: 'Beginner', preferredFormat: selectedClub?.defaultFormat ?? 'singles' });
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -886,7 +1015,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         if (!selectedSession) return;
         const formData = new FormData(event.currentTarget);
         const username = String(formData.get('account') ?? '');
-        const preferredFormat = String(formData.get('format') ?? 'singles') as Format;
+        const preferredFormat = fixedClubFormat ?? String(formData.get('format') ?? selectedClub?.defaultFormat ?? 'singles') as Format;
         const form = event.currentTarget;
         if (!username) {
             setError('Select a player account to add.');
@@ -932,10 +1061,12 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         }
     };
 
-    const deleteCompletedSession = async () => {
-        if (!selectedSession || statusOf(selectedSession) !== 'completed') return;
-        const confirmed = window.confirm(
-            `Delete "${selectedSession.title}" from your session history? Player lifetime ratings and match records will be preserved.`
+    const deleteSession = async () => {
+        if (!selectedSession || !['scheduled', 'completed'].includes(statusOf(selectedSession))) return;
+        const isCompleted = statusOf(selectedSession) === 'completed';
+        const confirmed = window.confirm(isCompleted
+            ? `Delete "${selectedSession.title}" from your session history? Player lifetime ratings and match records will be preserved.`
+            : `Delete the planned session "${selectedSession.title}"? This cannot be undone.`
         );
         if (!confirmed) return;
 
@@ -945,9 +1076,15 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         try {
             await apiRequest<{ message: string }>(`/sessions/${selectedSession._id}`, { method: 'DELETE' });
             setSessions((current) => current.filter((session) => session._id !== selectedSession._id));
+            setClubs((current) => current.map((club) =>
+                club.id === selectedClubId ? { ...club, sessionCount: Math.max(0, club.sessionCount - 1) } : club
+            ));
             setSelectedSession(null);
             setScreen('sessions');
-            setNotice('Completed session deleted. Player lifetime records were preserved.');
+            setNotice(isCompleted
+                ? 'Completed session deleted. Player lifetime records were preserved.'
+                : 'Planned session deleted.'
+            );
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -1071,8 +1208,12 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             <header className="organiser-topbar">
                 <div>
                     <span className="organiser-eyebrow">COURT SYNC · ORGANISER</span>
-                    <h1>Session control</h1>
-                    <p>Plan your sessions, prepare courts, and manage the player roster.</p>
+                    <h1>{screen === 'clubs' ? 'Your clubs' : selectedClub ? `${selectedClub.name} sessions` : 'Session control'}</h1>
+                    <p>{screen === 'clubs'
+                        ? 'Create a club or choose one to manage.'
+                        : screen === 'club-settings'
+                            ? 'Manage this club’s members, invite code, and session settings.'
+                            : 'Plan sessions, prepare courts, and manage players for this club.'}</p>
                 </div>
                 <div className="organiser-actions">
                     {onBackToDashboard && (
@@ -1088,14 +1229,14 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             <nav className="organiser-workspace-nav" aria-label="Organiser sections" role="tablist">
                 <button
                     id="organiser-matches-tab"
-                    className={screen !== 'player-stats' && screen !== 'clubs' ? 'active' : ''}
+                    className={screen !== 'player-stats' && screen !== 'clubs' && screen !== 'club-settings' ? 'active' : ''}
                     type="button"
                     role="tab"
-                    aria-selected={screen !== 'player-stats' && screen !== 'clubs'}
+                    aria-selected={screen !== 'player-stats' && screen !== 'clubs' && screen !== 'club-settings'}
                     aria-controls="organiser-matches-panel"
                     onClick={() => setScreen('sessions')}
                 >
-                    Organiser Matches
+                    Club sessions
                 </button>
                 <button
                     id="organiser-player-stats-tab"
@@ -1110,26 +1251,125 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 </button>
                 <button
                     id="organiser-clubs-tab"
-                    className={screen === 'clubs' ? 'active' : ''}
+                    className={screen === 'clubs' || screen === 'club-settings' ? 'active' : ''}
                     type="button"
                     role="tab"
-                    aria-selected={screen === 'clubs'}
+                    aria-selected={screen === 'clubs' || screen === 'club-settings'}
                     aria-controls="organiser-clubs-panel"
                     onClick={() => setScreen('clubs')}
                 >
-                    Clubs
+                    Manage clubs
                 </button>
             </nav>
+
+            {screen === 'clubs' && (
+                <section className="organiser-card" id="organiser-clubs-panel" role="tabpanel" aria-labelledby="organiser-clubs-tab">
+                    <div className="organiser-section-heading">
+                        <div>
+                            <span className="organiser-eyebrow">YOUR ORGANISATION</span>
+                            <h2>Clubs</h2>
+                            <p>Choose a club to manage its sessions, or create a new club.</p>
+                        </div>
+                    </div>
+                    <form className="organiser-form compact organiser-create-club" onSubmit={(event) => void createClub(event)}>
+                        <label>New club name
+                            <input
+                                required
+                                maxLength={80}
+                                value={newClubName}
+                                onChange={(event) => setNewClubName(event.target.value)}
+                                placeholder="For example, Kingston Rec"
+                            />
+                        </label>
+                        <button className="organiser-button" type="submit" disabled={busy}>
+                            {busy ? 'Creating…' : 'Create club'}
+                        </button>
+                    </form>
+                    {inviteCode && (
+                        <div className="organiser-club-new-code" role="status">
+                            <strong>New club invite code — copy and share it now:</strong>
+                            <span>{inviteCode}</span>
+                        </div>
+                    )}
+                    <div className="organiser-club-list">
+                        {clubs.map((club) => (
+                            <article className="organiser-club-card" key={club.id}>
+                                {editingClubId === club.id ? (
+                                    <form className="organiser-form compact organiser-club-card-rename" onSubmit={(event) => void renameClub(event, club.id)}>
+                                        <label>Club name
+                                            <input
+                                                required
+                                                maxLength={80}
+                                                value={clubNameDraft}
+                                                onChange={(event) => setClubNameDraft(event.target.value)}
+                                            />
+                                        </label>
+                                        <div className="organiser-actions">
+                                            <button className="organiser-button secondary" type="button" onClick={() => setEditingClubId('')}>Cancel</button>
+                                            <button className="organiser-button" type="submit" disabled={busy || !clubNameDraft.trim()}>
+                                                {busy ? 'Saving…' : 'Save name'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <>
+                                        <div>
+                                            <span className="organiser-eyebrow">{club.isDefault ? 'DEFAULT CLUB' : 'CLUB'}</span>
+                                            <h3>{club.name}</h3>
+                                            <p>{club.sessionCount} sessions · {club.memberCount} members</p>
+                                            {(club.sessionCount > 0 || club.memberCount > 0) && (
+                                                <small className="organiser-club-delete-help">
+                                                    Delete its sessions and remove its members before deleting this club.
+                                                </small>
+                                            )}
+                                        </div>
+                                        <div className="organiser-club-card-actions">
+                                            <button className="organiser-button" type="button" onClick={() => changeActiveClub(club.id)}>
+                                                Enter club
+                                            </button>
+                                            <button className="organiser-button secondary" type="button" onClick={() => {
+                                                setSelectedClubId(club.id);
+                                                setClubNameDraft(club.name);
+                                                setEditingClubId(club.id);
+                                                setError('');
+                                            }}>
+                                                Rename
+                                            </button>
+                                            <button className="organiser-button secondary" type="button" onClick={() => {
+                                                changeActiveClub(club.id);
+                                                setScreen('club-settings');
+                                            }}>
+                                                Members & settings
+                                            </button>
+                                            <button
+                                                className="organiser-button danger"
+                                                type="button"
+                                                disabled={busy || clubs.length <= 1 || club.sessionCount > 0 || club.memberCount > 0}
+                                                title={clubs.length <= 1
+                                                    ? 'Keep at least one club'
+                                                    : club.sessionCount || club.memberCount
+                                                        ? 'Remove this club’s sessions and members before deleting it'
+                                                        : undefined}
+                                                onClick={() => void deleteClub(club)}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </article>
+                        ))}
+                        {!clubs.length && <p className="organiser-muted">No clubs yet. Create one to start organising sessions.</p>}
+                    </div>
+                </section>
+            )}
 
             {clubs.length > 0 && screen !== 'clubs' && (
                 <div className="organiser-card organiser-club-context">
                     <label>Active club
                         <select
                             value={selectedClubId}
-                            onChange={(event) => {
-                                changeActiveClub(event.target.value);
-                                setClubNameDraft(clubs.find((club) => club.id === event.target.value)?.name ?? '');
-                            }}
+                            onChange={(event) => changeActiveClub(event.target.value)}
                         >
                             {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
                         </select>
@@ -1207,8 +1447,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 </section>
             )}
 
-            {screen === 'clubs' && (
-                <section className="organiser-card" id="organiser-clubs-panel" role="tabpanel" aria-labelledby="organiser-clubs-tab">
+            {screen === 'club-settings' && (
+                <section className="organiser-card">
+                    <button className="organiser-back" type="button" onClick={() => setScreen('clubs')}>← All clubs</button>
                     <div className="organiser-section-heading">
                         <div>
                             <span className="organiser-eyebrow">MEMBERSHIP AND ACCESS</span>
@@ -1220,45 +1461,61 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         <label>Selected club
                             <select value={selectedClubId} onChange={(event) => {
                                 setSelectedClubId(event.target.value);
-                                setClubNameDraft(clubs.find((club) => club.id === event.target.value)?.name ?? '');
+                                const club = clubs.find((item) => item.id === event.target.value);
+                                setClubNameDraft(club?.name ?? '');
+                                setAllowedFormatsDraft(club?.allowedFormats ?? ['singles', 'doubles']);
+                                setDefaultFormatDraft(club?.defaultFormat ?? 'singles');
                                 setInviteCode('');
                             }}>
                                 {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
                             </select>
                         </label>
-                        <form className="organiser-form compact" onSubmit={(event) => void createClub(event)}>
-                            <label>Create another club
-                                <input
-                                    required
-                                    maxLength={80}
-                                    value={newClubName}
-                                    onChange={(event) => setNewClubName(event.target.value)}
-                                    placeholder="Club name"
-                                />
-                            </label>
-                            <button className="organiser-button secondary" type="submit" disabled={busy}>
-                                {busy ? 'Creating…' : 'Create club'}
-                            </button>
-                        </form>
                     </div>
-                    {selectedClubId && (
-                        <form className="organiser-form compact organiser-club-rename" onSubmit={(event) => void renameClub(event)}>
-                            <label>Rename selected club
-                                <input
-                                    required
-                                    maxLength={80}
-                                    value={clubNameDraft}
-                                    onChange={(event) => setClubNameDraft(event.target.value)}
-                                />
-                            </label>
-                            <button className="organiser-button secondary" type="submit" disabled={busy || !clubNameDraft.trim()}>
-                                {busy ? 'Saving…' : 'Save club name'}
-                            </button>
-                        </form>
-                    )}
 
                     {selectedClubId && (
                         <>
+                            <section className="organiser-subcard">
+                                <div className="organiser-section-heading">
+                                    <div>
+                                        <h3>Session formats</h3>
+                                        <p>Choose which formats this club uses and the default for new sessions.</p>
+                                    </div>
+                                </div>
+                                <form className="organiser-form compact" onSubmit={(event) => void saveClubFormatSettings(event)}>
+                                    <div className="organiser-club-format-options">
+                                        {(['singles', 'doubles'] as const).map((format) => (
+                                            <label key={format}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allowedFormatsDraft.includes(format)}
+                                                    disabled={allowedFormatsDraft.length === 1 && allowedFormatsDraft.includes(format)}
+                                                    onChange={(event) => {
+                                                        const nextFormats = event.target.checked
+                                                            ? [...allowedFormatsDraft, format]
+                                                            : allowedFormatsDraft.filter((item) => item !== format);
+                                                        setAllowedFormatsDraft(nextFormats);
+                                                        if (!nextFormats.includes(defaultFormatDraft)) setDefaultFormatDraft(nextFormats[0]);
+                                                    }}
+                                                />
+                                                {format === 'singles' ? 'Singles' : 'Doubles'}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <label>Default format
+                                        <select value={defaultFormatDraft} onChange={(event) => setDefaultFormatDraft(event.target.value as Format)}>
+                                            {allowedFormatsDraft.map((format) => (
+                                                <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <button className="organiser-button secondary" type="submit" disabled={busy}>
+                                        {busy ? 'Saving…' : 'Save format settings'}
+                                    </button>
+                                    {allowedFormatsDraft.length === 1 && (
+                                        <p className="organiser-muted">This club will be {allowedFormatsDraft[0]}-only. Player preference choices will be hidden.</p>
+                                    )}
+                                </form>
+                            </section>
                             <section className="organiser-subcard">
                                 <div className="organiser-section-heading">
                                     <div>
@@ -1288,7 +1545,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 <div className="organiser-section-heading">
                                     <div>
                                         <h3>Pending requests ({pendingMembers.length})</h3>
-                                        <p>Approving a request adds that player to this club’s session roster.</p>
+                                        <p>Approve a player to add them to this club’s session roster.</p>
                                     </div>
                                 </div>
                                 {pendingMembers.length ? (
@@ -1307,10 +1564,50 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                                 >
                                                     Approve
                                                 </button>
+                                                <button
+                                                    className="organiser-button danger"
+                                                    type="button"
+                                                    disabled={busy}
+                                                    onClick={() => void removeClubMember(member)}
+                                                >
+                                                    Reject
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
                                 ) : <p className="organiser-muted">There are no pending membership requests.</p>}
+                            </section>
+                            <section className="organiser-subcard">
+                                <div className="organiser-section-heading">
+                                    <div>
+                                        <h3>Club members ({approvedMembers.length})</h3>
+                                        <p>Remove members here before deleting the club.</p>
+                                    </div>
+                                </div>
+                                {approvedMembers.length ? (
+                                    <div className="organiser-roster">
+                                        {approvedMembers.map((member) => (
+                                            <div className="organiser-roster-row" key={member.userId}>
+                                                <span>
+                                                    <strong>{member.username}</strong>
+                                                    <small>{member.level ?? 'Player'} · ELO {member.rating}</small>
+                                                </span>
+                                                <button
+                                                    className="organiser-button danger"
+                                                    type="button"
+                                                    disabled={busy}
+                                                    onClick={() => {
+                                                        if (window.confirm(`Remove ${member.username} from this club?`)) {
+                                                            void removeClubMember(member);
+                                                        }
+                                                    }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="organiser-muted">There are no approved members yet.</p>}
                             </section>
                         </>
                     )}
@@ -1404,12 +1701,15 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         <div className="organiser-actions">
                             <button className="organiser-button secondary" type="button" onClick={openEditForm}>Edit session</button>
                             <button className="organiser-button" type="button" onClick={beginSessionSetup}>Start session</button>
+                            <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteSession()}>
+                                {busy ? 'Deleting…' : 'Delete planned session'}
+                            </button>
                         </div>
                     )}
                     {statusOf(selectedSession) === 'completed' && (
                         <div className="organiser-actions">
                             <button className="organiser-button" type="button" onClick={() => setScreen('summary')}>View session summary</button>
-                            <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteCompletedSession()}>
+                            <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteSession()}>
                                 {busy ? 'Deleting…' : 'Delete completed session'}
                             </button>
                         </div>
@@ -1432,10 +1732,10 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 return (
                                     <div className="organiser-player-option" key={account.username}>
                                         <label>
-                                            <input type="checkbox" checked={Boolean(selection)} onChange={() => toggleAccount(account, 'singles')} />
+                                            <input type="checkbox" checked={Boolean(selection)} onChange={() => toggleAccount(account, selectedClub?.defaultFormat ?? 'singles')} />
                                             <span><strong>{account.username}</strong><small>Rating {account.rating}{account.level ? ` · ${account.level}` : ''}</small></span>
                                         </label>
-                                        {selection && (
+                                        {selection && !fixedClubFormat && (
                                             <select aria-label={`${account.username} preference`} value={selection.preferredFormat} onChange={(event) => updatePlayerPreference(account.username, event.target.value as Format)}>
                                                 <option value="singles">Prefers singles</option>
                                                 <option value="doubles">Prefers doubles</option>
@@ -1455,7 +1755,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                     <label>Age<input type="number" min="1" max="120" value={newGuest.age} onChange={(event) => setNewGuest({ ...newGuest, age: event.target.value })} /></label>
                                     <label>Playing level<select value={newGuest.level} onChange={(event) => setNewGuest({ ...newGuest, level: event.target.value })}>{levels.map((level) => <option key={level}>{level}</option>)}</select></label>
                                 </div>
-                                <label>Preference<select value={newGuest.preferredFormat} onChange={(event) => setNewGuest({ ...newGuest, preferredFormat: event.target.value as Format })}><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label>
+                                {!fixedClubFormat && <label>Preference<select value={newGuest.preferredFormat} onChange={(event) => setNewGuest({ ...newGuest, preferredFormat: event.target.value as Format })}>{selectedClub?.allowedFormats.map((format) => <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>)}</select></label>}
                                 <button className="organiser-button secondary" type="submit">Add guest to roster</button>
                             </form>
                         </section>
@@ -1469,7 +1769,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 <label>Account password<input required type="password" minLength={8} value={newPlayer.password} onChange={(event) => setNewPlayer({ ...newPlayer, password: event.target.value })} /></label>
                                 <label>Age<input type="number" min="1" max="120" value={newPlayer.age} onChange={(event) => setNewPlayer({ ...newPlayer, age: event.target.value })} /></label>
                                 <label>Playing level<select value={newPlayer.level} onChange={(event) => setNewPlayer({ ...newPlayer, level: event.target.value })}>{levels.map((level) => <option key={level}>{level}</option>)}</select></label>
-                                <label>Preference<select value={newPlayer.preferredFormat} onChange={(event) => setNewPlayer({ ...newPlayer, preferredFormat: event.target.value as Format })}><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label>
+                                {!fixedClubFormat && <label>Preference<select value={newPlayer.preferredFormat} onChange={(event) => setNewPlayer({ ...newPlayer, preferredFormat: event.target.value as Format })}>{selectedClub?.allowedFormats.map((format) => <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>)}</select></label>}
                             </div>
                             <button className="organiser-button secondary" type="submit" disabled={busy}>{busy ? 'Registering…' : 'Register account and add player'}</button>
                         </form>
@@ -1493,10 +1793,10 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
                     <section className="organiser-subcard">
                         <div className="organiser-section-heading">
-                            <div><h3>Courts and formats</h3><p>Select between 1 and 6 courts; each court can be singles or doubles.</p></div>
+                            <div><h3>Courts and formats</h3><p>{fixedClubFormat ? `All courts use ${fixedClubFormat}.` : 'Select between 1 and 6 courts and choose a format for each.'}</p></div>
                             <select className="organiser-court-count" aria-label="Number of courts" value={courtFormats.length} onChange={(event) => {
                                 const count = Number(event.target.value);
-                                setCourtFormats((current) => Array.from({ length: count }, (_, index) => current[index] ?? 'singles'));
+                                setCourtFormats((current) => Array.from({ length: count }, (_, index) => current[index] ?? selectedClub?.defaultFormat ?? 'singles'));
                             }}>
                                 {[1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} {count === 1 ? 'court' : 'courts'}</option>)}
                             </select>
@@ -1505,12 +1805,13 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             {courtFormats.map((format, index) => (
                                 <div key={index} className="organiser-court-setup">
                                     <CourtDiagram number={index + 1} format={format} />
-                                    <label>Court {index + 1} format
+                                    {!fixedClubFormat && <label>Court {index + 1} format
                                         <select value={format} onChange={(event) => setCourtFormats((current) => current.map((value, courtIndex) => courtIndex === index ? event.target.value as Format : value))}>
-                                            <option value="singles">Singles</option>
-                                            <option value="doubles">Doubles</option>
+                                            {selectedClub?.allowedFormats.map((allowedFormat) => (
+                                                <option key={allowedFormat} value={allowedFormat}>{allowedFormat === 'singles' ? 'Singles' : 'Doubles'}</option>
+                                            ))}
                                         </select>
-                                    </label>
+                                    </label>}
                                 </div>
                             ))}
                         </div>
@@ -1539,7 +1840,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     </div>
                     <section className="organiser-subcard">
                         <div className="organiser-section-heading">
-                            <div><h3>Courts</h3></div>
+                            <div><h3>Courts</h3>{fixedClubFormat && <p>All courts use {fixedClubFormat}.</p>}</div>
                             <label>Number of courts
                                 <select className="organiser-court-count" aria-label="Number of live courts" value={courts.length} disabled={busy} onChange={(event) => {
                                     const count = Number(event.target.value);
@@ -1551,7 +1852,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             </label>
                         </div>
                         <div className="organiser-court-grid">
-                            {courts.map((format, index) => (
+                            {!fixedClubFormat && courts.map((format, index) => (
                                 <label className="organiser-court-setup" key={index}>Court {index + 1} format
                                     <select value={format} disabled={busy} onChange={(event) => {
                                         const nextFormats = courts.map((currentFormat, courtIndex) =>
@@ -1559,8 +1860,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                         );
                                         void updateLiveCourtFormats(nextFormats);
                                     }}>
-                                        <option value="singles">Singles</option>
-                                        <option value="doubles">Doubles</option>
+                                        {selectedClub?.allowedFormats.map((allowedFormat) => (
+                                            <option key={allowedFormat} value={allowedFormat}>{allowedFormat === 'singles' ? 'Singles' : 'Doubles'}</option>
+                                        ))}
                                     </select>
                                 </label>
                             ))}
@@ -1714,7 +2016,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                         {playerAccounts.filter((account) => !selectedSession.players.some((player) => player.username === account.username)).map((account) => <option value={account.username} key={account.username}>{account.username}</option>)}
                                     </select>
                                 </label>
-                                <label>Preference<select name="format" defaultValue="singles"><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label>
+                                {!fixedClubFormat && <label>Preference<select name="format" defaultValue={selectedClub?.defaultFormat ?? 'singles'}>
+                                    {selectedClub?.allowedFormats.map((format) => (
+                                        <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>
+                                    ))}
+                                </select></label>}
                                 <button className="organiser-button secondary" type="submit" disabled={busy}>Add player</button>
                             </form>
                         </section>
@@ -1726,7 +2032,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                     <label>Age<input type="number" min="1" max="120" value={newGuest.age} onChange={(event) => setNewGuest({ ...newGuest, age: event.target.value })} /></label>
                                     <label>Level<select value={newGuest.level} onChange={(event) => setNewGuest({ ...newGuest, level: event.target.value })}>{levels.map((level) => <option key={level}>{level}</option>)}</select></label>
                                 </div>
-                                <label>Preference<select value={newGuest.preferredFormat} onChange={(event) => setNewGuest({ ...newGuest, preferredFormat: event.target.value as Format })}><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label>
+                                {!fixedClubFormat && <label>Preference<select value={newGuest.preferredFormat} onChange={(event) => setNewGuest({ ...newGuest, preferredFormat: event.target.value as Format })}>{selectedClub?.allowedFormats.map((format) => <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>)}</select></label>}
                                 <button className="organiser-button secondary" type="submit" disabled={busy}>Add guest</button>
                             </form>
                         </section>
@@ -1739,7 +2045,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 <label>Account password<input required type="password" minLength={8} value={newPlayer.password} onChange={(event) => setNewPlayer({ ...newPlayer, password: event.target.value })} /></label>
                                 <label>Age<input type="number" min="1" max="120" value={newPlayer.age} onChange={(event) => setNewPlayer({ ...newPlayer, age: event.target.value })} /></label>
                                 <label>Playing level<select value={newPlayer.level} onChange={(event) => setNewPlayer({ ...newPlayer, level: event.target.value })}>{levels.map((level) => <option key={level}>{level}</option>)}</select></label>
-                                <label>Preference<select value={newPlayer.preferredFormat} onChange={(event) => setNewPlayer({ ...newPlayer, preferredFormat: event.target.value as Format })}><option value="singles">Singles</option><option value="doubles">Doubles</option></select></label>
+                                {!fixedClubFormat && <label>Preference<select value={newPlayer.preferredFormat} onChange={(event) => setNewPlayer({ ...newPlayer, preferredFormat: event.target.value as Format })}>{selectedClub?.allowedFormats.map((format) => <option key={format} value={format}>{format === 'singles' ? 'Singles' : 'Doubles'}</option>)}</select></label>}
                             </div>
                             <button className="organiser-button secondary" type="submit" disabled={busy}>{busy ? 'Registering…' : 'Register account and add player'}</button>
                         </form>
@@ -1769,7 +2075,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             <button className="organiser-button" type="button" onClick={() => downloadPlayerPerformancesCsv(selectedSession)}>Download player performances CSV</button>
                             <button className="organiser-button secondary" type="button" onClick={() => downloadSessionRankingsCsv(selectedSession)}>Download session rankings CSV</button>
                             {statusOf(selectedSession) === 'completed' && (
-                                <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteCompletedSession()}>
+                                <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteSession()}>
                                     {busy ? 'Deleting…' : 'Delete completed session'}
                                 </button>
                             )}

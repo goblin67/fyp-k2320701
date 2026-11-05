@@ -37,6 +37,9 @@ const isDuplicateKeyError = (error: unknown): boolean =>
 const ensureDefaultClub = async (ownerId: string) => {
     let club = await Club.findOne({ ownerId, isDefault: true });
     if (!club) {
+        club = await Club.findOne({ ownerId }).sort({ createdAt: 1 });
+    }
+    if (!club) {
         const owner = await User.findById(ownerId).select('username');
         if (!owner) throw new Error('Organiser account was not found');
         try {
@@ -92,15 +95,29 @@ router.get('/clubs', async (req, res) => {
     try {
         await ensureDefaultClub(req.user.id);
         const clubs = await Club.find({ ownerId: req.user.id })
-            .select('name isDefault inviteCodeHash')
+            .select('name isDefault inviteCodeHash allowedFormats defaultFormat')
             .sort({ isDefault: -1, name: 1 })
             .lean();
-        res.json(clubs.map((club) => ({
-            id: club._id.toString(),
-            name: club.name,
-            isDefault: club.isDefault,
-            hasInviteCode: Boolean(club.inviteCodeHash)
-        })));
+        const clubData = await Promise.all(clubs.map(async (club) => {
+            const [sessionCount, memberCount] = await Promise.all([
+                Session.countDocuments({ adminId: req.user.id, clubId: club._id }),
+                User.countDocuments({
+                    isDeleted: { $ne: true },
+                    clubs: { $elemMatch: { clubId: club._id } }
+                })
+            ]);
+            return {
+                id: club._id.toString(),
+                name: club.name,
+                isDefault: club.isDefault,
+                hasInviteCode: Boolean(club.inviteCodeHash),
+                allowedFormats: club.allowedFormats?.length ? club.allowedFormats : formats,
+                defaultFormat: club.defaultFormat ?? 'singles',
+                sessionCount,
+                memberCount
+            };
+        }));
+        res.json(clubData);
     } catch (error) {
         console.error('ORGANISER CLUB LIST ERROR:', error);
         res.status(500).json({ error: 'Could not load clubs' });
@@ -125,6 +142,8 @@ router.post('/clubs', async (req, res) => {
             name: club.name,
             isDefault: false,
             hasInviteCode: true,
+            allowedFormats: club.allowedFormats,
+            defaultFormat: club.defaultFormat,
             inviteCode
         });
     } catch (error) {
@@ -156,6 +175,91 @@ router.patch('/clubs/:id', async (req, res) => {
     } catch (error) {
         console.error('ORGANISER CLUB UPDATE ERROR:', error);
         res.status(500).json({ error: 'Could not update club name' });
+    }
+});
+
+router.delete('/clubs/:id', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const [sessionCount, memberCount, otherClubCount] = await Promise.all([
+            Session.countDocuments({ adminId: req.user.id, clubId: club._id }),
+            User.countDocuments({
+                isDeleted: { $ne: true },
+                clubs: { $elemMatch: { clubId: club._id } }
+            }),
+            Club.countDocuments({ ownerId: req.user.id, _id: { $ne: club._id } })
+        ]);
+        if (sessionCount || memberCount) {
+            res.status(409).json({
+                error: `Remove this club’s ${sessionCount} session(s) and ${memberCount} member(s) before deleting it`,
+                sessionCount,
+                memberCount
+            });
+            return;
+        }
+        if (!otherClubCount) {
+            res.status(409).json({ error: 'Create or keep another club before deleting your last club' });
+            return;
+        }
+        await User.updateMany(
+            { clubs: { $elemMatch: { clubId: club._id } } },
+            { $pull: { clubs: { clubId: club._id } } }
+        );
+        await club.deleteOne();
+        res.json({ message: 'Club deleted' });
+    } catch (error) {
+        console.error('ORGANISER CLUB DELETE ERROR:', error);
+        res.status(500).json({ error: 'Could not delete club' });
+    }
+});
+
+router.patch('/clubs/:id/settings', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const { allowedFormats, defaultFormat } = req.body as {
+            allowedFormats?: unknown;
+            defaultFormat?: unknown;
+        };
+        if (!Array.isArray(allowedFormats) || allowedFormats.length < 1 ||
+            allowedFormats.length > formats.length || !allowedFormats.every(isFormat) ||
+            new Set(allowedFormats).size !== allowedFormats.length) {
+            res.status(400).json({ error: 'Choose singles, doubles, or both formats' });
+            return;
+        }
+        if (!isFormat(defaultFormat) || !allowedFormats.includes(defaultFormat)) {
+            res.status(400).json({ error: 'The default format must be one of the club’s allowed formats' });
+            return;
+        }
+        const activeSessions = await Session.find({
+            adminId: req.user.id,
+            clubId: club._id,
+            status: 'active'
+        }).select('courtFormats').lean();
+        if (activeSessions.some((session) =>
+            session.courtFormats.some((format) => !allowedFormats.includes(format as PlayFormat))
+        )) {
+            res.status(409).json({ error: 'Finish or update active sessions before removing a format used by one of their courts' });
+            return;
+        }
+
+        club.allowedFormats = allowedFormats;
+        club.defaultFormat = defaultFormat;
+        await club.save();
+        res.json({
+            allowedFormats: club.allowedFormats,
+            defaultFormat: club.defaultFormat
+        });
+    } catch (error) {
+        console.error('ORGANISER CLUB SETTINGS ERROR:', error);
+        res.status(500).json({ error: 'Could not update club session formats' });
     }
 });
 
@@ -240,6 +344,33 @@ router.patch('/clubs/:id/members/:userId/approve', async (req, res) => {
     } catch (error) {
         console.error('ORGANISER CLUB APPROVAL ERROR:', error);
         res.status(500).json({ error: 'Could not approve membership request' });
+    }
+});
+
+router.delete('/clubs/:id/members/:userId', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        if (!/^[a-f\d]{24}$/i.test(req.params.userId)) {
+            res.status(400).json({ error: 'Player id is invalid' });
+            return;
+        }
+        const user = await User.findOneAndUpdate(
+            { _id: req.params.userId, clubs: { $elemMatch: { clubId: club._id } } },
+            { $pull: { clubs: { clubId: club._id } } },
+            { new: true }
+        );
+        if (!user) {
+            res.status(404).json({ error: 'Club member not found' });
+            return;
+        }
+        res.json({ message: 'Player removed from club' });
+    } catch (error) {
+        console.error('ORGANISER CLUB MEMBER REMOVE ERROR:', error);
+        res.status(500).json({ error: 'Could not remove player from club' });
     }
 });
 
@@ -357,13 +488,13 @@ router.delete('/sessions/:id', async (req, res) => {
             res.status(404).json({ error: 'Session not found' });
             return;
         }
-        if (session.isActive || (session.status !== 'completed' && session.status !== undefined)) {
-            res.status(409).json({ error: 'Only completed sessions can be deleted' });
+        if (session.isActive || (session.status !== 'scheduled' && session.status !== 'completed' && session.status !== undefined)) {
+            res.status(409).json({ error: 'Only planned or completed sessions can be deleted' });
             return;
         }
 
         await session.deleteOne();
-        res.json({ message: 'Completed session deleted. Player lifetime records were preserved.' });
+        res.json({ message: 'Session deleted. Player lifetime records were preserved.' });
     } catch (error) {
         console.error('ORGANISER SESSION DELETE ERROR:', error);
         res.status(500).json({ error: 'Could not delete session' });
@@ -639,6 +770,16 @@ router.post('/sessions/:id/start', async (req, res) => {
             res.status(409).json({ error: 'This session is not planned and cannot be started' });
             return;
         }
+        const club = session.clubId
+            ? await Club.findOne({ _id: session.clubId, ownerId: req.user.id })
+            : null;
+        if (!club) {
+            res.status(409).json({ error: 'This session is not associated with a club' });
+            return;
+        }
+        const allowedFormats = club.allowedFormats?.length ? club.allowedFormats : formats;
+        const defaultFormat = club.defaultFormat ?? 'singles';
+        const fixedFormat = allowedFormats.length === 1 ? allowedFormats[0] : undefined;
 
         const { players, courtFormats } = req.body as {
             players?: unknown;
@@ -648,8 +789,13 @@ router.post('/sessions/:id/start', async (req, res) => {
             res.status(400).json({ error: 'Select at least one player' });
             return;
         }
-        if (!Array.isArray(courtFormats) || courtFormats.length < 1 || courtFormats.length > 6 || !courtFormats.every(isFormat)) {
+        if (!Array.isArray(courtFormats) || courtFormats.length < 1 || courtFormats.length > 6 ||
+            !courtFormats.every((format) => isFormat(format) && allowedFormats.includes(format))) {
             res.status(400).json({ error: 'Choose a format for each of 1 to 6 courts' });
+            return;
+        }
+        if (fixedFormat && courtFormats.some((format) => format !== fixedFormat)) {
+            res.status(400).json({ error: `This club only allows ${fixedFormat} courts` });
             return;
         }
 
@@ -668,8 +814,14 @@ router.post('/sessions/:id/start', async (req, res) => {
                 level?: unknown;
             };
             const username = typeof player.username === 'string' ? player.username.trim() : '';
-            if (!username || !isFormat(player.preferredFormat) || (player.kind !== 'account' && player.kind !== 'guest')) {
+            if (!username || (!fixedFormat && !isFormat(player.preferredFormat)) ||
+                (player.preferredFormat !== undefined && !isFormat(player.preferredFormat)) ||
+                (player.kind !== 'account' && player.kind !== 'guest')) {
                 res.status(400).json({ error: 'Each player needs a name, player type, and singles/doubles preference' });
+                return;
+            }
+            if (!fixedFormat && !allowedFormats.includes(player.preferredFormat as PlayFormat)) {
+                res.status(400).json({ error: `This club does not allow ${player.preferredFormat} player preferences` });
                 return;
             }
             if (seenNames.has(username.toLowerCase())) {
@@ -707,7 +859,7 @@ router.post('/sessions/:id/start', async (req, res) => {
             sessionPlayers.push({
                 username,
                 isGuest: player.kind === 'guest',
-                preferredFormat: player.preferredFormat,
+                preferredFormat: fixedFormat ?? player.preferredFormat ?? defaultFormat,
                 age: typeof player.age === 'number' ? player.age : undefined,
                 level: typeof player.level === 'string' ? player.level.trim() : user?.level,
                 rating: user?.rating ?? 1500,
@@ -744,6 +896,15 @@ router.post('/sessions/:id/players', async (req, res) => {
             res.status(409).json({ error: 'Players can only be added to a live session' });
             return;
         }
+        const club = session.clubId
+            ? await Club.findOne({ _id: session.clubId, ownerId: req.user.id })
+            : null;
+        if (!club) {
+            res.status(409).json({ error: 'This session is not associated with a club' });
+            return;
+        }
+        const allowedFormats = club.allowedFormats?.length ? club.allowedFormats : formats;
+        const fixedFormat = allowedFormats.length === 1 ? allowedFormats[0] : undefined;
 
         const { username: rawUsername, kind, preferredFormat, age, level } = req.body as {
             username?: unknown;
@@ -753,8 +914,14 @@ router.post('/sessions/:id/players', async (req, res) => {
             level?: unknown;
         };
         const username = typeof rawUsername === 'string' ? rawUsername.trim() : '';
-        if (!username || (kind !== 'account' && kind !== 'guest') || !isFormat(preferredFormat)) {
+        if (!username || (kind !== 'account' && kind !== 'guest') ||
+            (!fixedFormat && !isFormat(preferredFormat)) ||
+            (preferredFormat !== undefined && !isFormat(preferredFormat))) {
             res.status(400).json({ error: 'Name, player type, and singles/doubles preference are required' });
+            return;
+        }
+        if (!fixedFormat && !allowedFormats.includes(preferredFormat as PlayFormat)) {
+            res.status(400).json({ error: `This club does not allow ${preferredFormat} player preferences` });
             return;
         }
         if (session.players.some((player) => player.username.toLowerCase() === username.toLowerCase())) {
@@ -790,7 +957,7 @@ router.post('/sessions/:id/players', async (req, res) => {
         session.players.push({
             username,
             isGuest: kind === 'guest',
-            preferredFormat,
+            preferredFormat: fixedFormat ?? preferredFormat,
             age: typeof age === 'number' ? age : undefined,
             level: typeof level === 'string' ? level.trim() : user?.level,
             rating: user?.rating ?? 1500,
@@ -820,10 +987,19 @@ router.patch('/sessions/:id/courts', async (req, res) => {
             res.status(409).json({ error: 'Courts can only be changed during a live session' });
             return;
         }
+        const club = session.clubId
+            ? await Club.findOne({ _id: session.clubId, ownerId: req.user.id })
+            : null;
+        if (!club) {
+            res.status(409).json({ error: 'This session is not associated with a club' });
+            return;
+        }
+        const allowedFormats = club.allowedFormats?.length ? club.allowedFormats : formats;
 
         const { courtFormats } = req.body as { courtFormats?: unknown };
-        if (!Array.isArray(courtFormats) || courtFormats.length < 1 || courtFormats.length > 6 || !courtFormats.every(isFormat)) {
-            res.status(400).json({ error: 'Choose a format for each of 1 to 6 courts' });
+        if (!Array.isArray(courtFormats) || courtFormats.length < 1 || courtFormats.length > 6 ||
+            !courtFormats.every((format) => isFormat(format) && allowedFormats.includes(format))) {
+            res.status(400).json({ error: `Choose between 1 and 6 courts using the club’s allowed formats: ${allowedFormats.join(', ')}` });
             return;
         }
         if (session.matches.some((match) => match.status === 'ongoing' && match.court > courtFormats.length)) {
