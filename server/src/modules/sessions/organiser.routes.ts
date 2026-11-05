@@ -691,10 +691,21 @@ router.post('/sessions/:id/matches/:matchId/finish', async (req, res) => {
         session.players.forEach((player) => {
             if (names.includes(player.username)) player.joinedAt = now;
         });
+        const waitAlreadyUsedOnCourts = new Set(
+            session.matches
+                .filter((item) => item.status === 'proposed' && item.awaitingNextFinish && !item.manualOverride)
+                .map((item) => item.court)
+        );
         session.matches = session.matches.filter((item) =>
             item.status !== 'proposed' || item.manualOverride
         );
-        const newMatches = buildWaitingMatches(getWaitingPlayers(session), getFreeCourts(session), session, true);
+        const newMatches = buildWaitingMatches(
+            getWaitingPlayers(session),
+            getFreeCourts(session),
+            session,
+            true,
+            waitAlreadyUsedOnCourts
+        );
         if (newMatches.length) session.matches.push(...newMatches);
         session.isActive = true;
         await session.save();

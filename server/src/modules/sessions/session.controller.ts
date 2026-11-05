@@ -233,29 +233,44 @@ export const getFreeCourts = (session: SessionDocument): number[] => {
     return Array.from({ length: session.numCourts }, (_, i) => i + 1).filter((court) => !busyCourts.includes(court));
 };
 
-const getRecentPlayerPairs = (session: SessionDocument): Set<string> => {
+interface RecentPairHistory {
+    playedTogether: Set<string>;
+    wereTeammates: Set<string>;
+}
+
+const getRecentPlayerPairs = (session: SessionDocument): RecentPairHistory => {
     const recentMatches = session.matches
         .filter((match) => match.status === 'finished')
         .sort((a, b) => new Date(b.finishedAt ?? b.startTime ?? 0).getTime() - new Date(a.finishedAt ?? a.startTime ?? 0).getTime())
         .slice(0, 3);
-    if (recentMatches.length < 3) return new Set();
-    const pairs = new Set<string>();
+    const history: RecentPairHistory = {
+        playedTogether: new Set(),
+        wereTeammates: new Set()
+    };
+    if (recentMatches.length < 3) return history;
+    const pairKey = (first: string, second: string) => [first, second].sort().join('\u0000');
     for (const match of recentMatches) {
         const players = [match.player1, match.player2, match.player3, match.player4]
             .filter((username): username is string => Boolean(username));
         for (let first = 0; first < players.length - 1; first += 1) {
             for (let second = first + 1; second < players.length; second += 1) {
-                pairs.add([players[first]!, players[second]!].sort().join('\u0000'));
+                history.playedTogether.add(pairKey(players[first]!, players[second]!));
             }
         }
+        const teams = match.isDoubles
+            ? [[match.player1, match.player2], [match.player3, match.player4]]
+            : [];
+        for (const [first, second] of teams) {
+            if (first && second) history.wereTeammates.add(pairKey(first, second));
+        }
     }
-    return pairs;
+    return history;
 };
 
 const choosePlayersForMatch = (
     eligiblePlayers: SessionPlayer[],
     neededPlayers: number,
-    recentPairs: Set<string>,
+    recentPairs: RecentPairHistory,
     isDoubles: boolean,
     canWaitForAnotherMatch: boolean
 ): { players: SessionPlayer[]; awaitingNextFinish: boolean } | null => {
@@ -266,36 +281,41 @@ const choosePlayersForMatch = (
         [first.username, second.username].sort().join('\u0000');
 
     if (!isDoubles) {
+        let bestPair: SessionPlayer[] | null = null;
+        let fewestRepeats = Number.POSITIVE_INFINITY;
         for (let first = 0; first < candidates.length - 1; first += 1) {
             for (let second = first + 1; second < candidates.length; second += 1) {
                 const players = [candidates[first]!, candidates[second]!];
-                if (!recentPairs.has(pairKey(players[0]!, players[1]!))) {
-                    return { players, awaitingNextFinish: false };
+                const repeats = Number(recentPairs.playedTogether.has(pairKey(players[0]!, players[1]!)));
+                if (repeats < fewestRepeats) {
+                    bestPair = players;
+                    fewestRepeats = repeats;
                 }
             }
         }
+        if (!bestPair) return null;
         return {
-            players: candidates.slice(0, neededPlayers),
-            awaitingNextFinish: canWaitForAnotherMatch
+            players: bestPair,
+            awaitingNextFinish: canWaitForAnotherMatch && fewestRepeats > 0
         };
     }
 
     let bestSelection: SessionPlayer[] | null = null;
-    let fewestRecentPairRepeats = Number.POSITIVE_INFINITY;
+    let bestScore = Number.POSITIVE_INFINITY;
+    let bestRecentPairCount = 0;
     for (let first = 0; first < candidates.length - 3; first += 1) {
         for (let second = first + 1; second < candidates.length - 2; second += 1) {
             for (let third = second + 1; third < candidates.length - 1; third += 1) {
                 for (let fourth = third + 1; fourth < candidates.length; fourth += 1) {
                     const group = [candidates[first]!, candidates[second]!, candidates[third]!, candidates[fourth]!];
-                    let recentPairRepeats = 0;
+                    let recentPairCount = 0;
                     for (let left = 0; left < group.length - 1; left += 1) {
                         for (let right = left + 1; right < group.length; right += 1) {
-                            if (recentPairs.has(pairKey(group[left]!, group[right]!))) {
-                                recentPairRepeats += 1;
+                            if (recentPairs.playedTogether.has(pairKey(group[left]!, group[right]!))) {
+                                recentPairCount += 1;
                             }
                         }
                     }
-                    if (recentPairRepeats > fewestRecentPairRepeats) continue;
 
                     const teamArrangements = [
                         [group[0]!, group[1]!, group[2]!, group[3]!],
@@ -303,11 +323,15 @@ const choosePlayersForMatch = (
                         [group[0]!, group[3]!, group[1]!, group[2]!]
                     ];
                     for (const arrangement of teamArrangements) {
-                        if (recentPairRepeats < fewestRecentPairRepeats) {
+                        const teammateRepeats =
+                            Number(recentPairs.wereTeammates.has(pairKey(arrangement[0]!, arrangement[1]!))) +
+                            Number(recentPairs.wereTeammates.has(pairKey(arrangement[2]!, arrangement[3]!)));
+                        const score = recentPairCount + teammateRepeats * 2;
+                        if (score < bestScore) {
                             bestSelection = arrangement;
-                            fewestRecentPairRepeats = recentPairRepeats;
+                            bestScore = score;
+                            bestRecentPairCount = recentPairCount;
                         }
-                        if (recentPairRepeats === 0) return { players: arrangement, awaitingNextFinish: false };
                     }
                 }
             }
@@ -317,7 +341,7 @@ const choosePlayersForMatch = (
     if (!bestSelection) return null;
     return {
         players: bestSelection,
-        awaitingNextFinish: fewestRecentPairRepeats > 0 && canWaitForAnotherMatch
+        awaitingNextFinish: canWaitForAnotherMatch && bestRecentPairCount >= 4
     };
 };
 
@@ -325,7 +349,8 @@ export const buildWaitingMatches = (
     players: SessionPlayer[],
     freeCourts: number[],
     session: SessionDocument,
-    proposed = false
+    proposed = false,
+    waitAlreadyUsedOnCourts: ReadonlySet<number> = new Set()
 ): SessionMatch[] => {
     const sortedPlayers = [...players].sort((a, b) => {
         const joinedA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
@@ -359,6 +384,7 @@ export const buildWaitingMatches = (
         );
         const preferredSet = new Set(preferredPlayers);
         const canWaitForAnotherMatch = proposed && session.matches.some((match) =>
+            !waitAlreadyUsedOnCourts.has(court) &&
             match.status === 'ongoing' &&
             [match.player1, match.player2, match.player3, match.player4].some((username) => {
                 if (!username) return false;
@@ -377,7 +403,7 @@ export const buildWaitingMatches = (
         const chosen = choosePlayersForMatch(
             balancedEligiblePlayers,
             neededPlayers,
-            proposed ? recentPairs : new Set(),
+            proposed ? recentPairs : { playedTogether: new Set(), wereTeammates: new Set() },
             isDoubles,
             canWaitForAnotherMatch
         );

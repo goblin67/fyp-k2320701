@@ -1313,7 +1313,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                             <div className="organiser-proposal-note">
                                                 <strong>Proposed next match</strong>
                                                 <span>{match.awaitingNextFinish && !match.manualOverride
-                                                    ? 'These players have played together recently. We’ll try a different mix when another match finishes, or you can edit the lineup to approve it now.'
+                                                    ? 'This lineup repeats a recent group of players. It will wait for one other match, then propose the best available mix without waiting again.'
                                                     : 'Review or edit the lineup, then approve to start.'}</span>
                                             </div>
                                         ) : (
