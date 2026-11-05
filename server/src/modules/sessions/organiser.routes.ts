@@ -1,7 +1,10 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import authMiddleware from '../auth/auth.middleware.js';
 import organiserMiddleware from '../auth/organiser.middleware.js';
 import User from '../users/user.model.js';
+import Club from '../clubs/club.model.js';
 import Session, { type PlayFormat, type PlayerField, type SessionDocument, type SessionMatch, type SessionPlayer } from './session.model.js';
 import { getFreeCourts, buildWaitingMatches, updateMatchRatings } from './session.controller.js';
 
@@ -27,11 +30,299 @@ const getMatchFields = (match: SessionMatch): PlayerField[] =>
         ? ['player1', 'player2', 'player3', 'player4']
         : ['player1', 'player2'];
 
+const createInviteCode = (): string => randomBytes(10).toString('hex').toUpperCase();
+const isDuplicateKeyError = (error: unknown): boolean =>
+    typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
+
+const ensureDefaultClub = async (ownerId: string) => {
+    let club = await Club.findOne({ ownerId, isDefault: true });
+    if (!club) {
+        const owner = await User.findById(ownerId).select('username');
+        if (!owner) throw new Error('Organiser account was not found');
+        try {
+            club = await Club.create({
+                ownerId,
+                name: `${owner.username}'s Club`,
+                isDefault: true
+            });
+        } catch (error) {
+            if (!isDuplicateKeyError(error)) throw error;
+            club = await Club.findOne({ ownerId, isDefault: true });
+            if (!club) throw error;
+        }
+    }
+
+    await Session.updateMany(
+        { adminId: ownerId, clubId: null },
+        { $set: { clubId: club._id } }
+    );
+    const sessions = await Session.find({ adminId: ownerId, clubId: club._id }).select('players').lean();
+    const accountNames = [...new Set(sessions.flatMap((session) =>
+        session.players.filter((player) => !player.isGuest).map((player) => player.username)
+    ))];
+    if (accountNames.length) {
+        const users = await User.find({
+            username: { $in: accountNames },
+            isDeleted: { $ne: true },
+            role: { $ne: 'organiser' }
+        });
+        for (const user of users) {
+            if (!user.clubs.some((membership) => membership.clubId.toString() === club._id.toString())) {
+                user.clubs.push({
+                    clubId: club._id,
+                    status: 'approved',
+                    requestedAt: new Date(),
+                    approvedAt: new Date()
+                });
+                await user.save();
+            }
+        }
+    }
+    return club;
+};
+
+const findOwnedClub = async (clubId: unknown, ownerId: string) => {
+    if (typeof clubId !== 'string' || !/^[a-f\d]{24}$/i.test(clubId)) return null;
+    return Club.findOne({ _id: clubId, ownerId });
+};
+
 router.use(authMiddleware, organiserMiddleware);
+
+router.get('/clubs', async (req, res) => {
+    try {
+        await ensureDefaultClub(req.user.id);
+        const clubs = await Club.find({ ownerId: req.user.id })
+            .select('name isDefault inviteCodeHash')
+            .sort({ isDefault: -1, name: 1 })
+            .lean();
+        res.json(clubs.map((club) => ({
+            id: club._id.toString(),
+            name: club.name,
+            isDefault: club.isDefault,
+            hasInviteCode: Boolean(club.inviteCodeHash)
+        })));
+    } catch (error) {
+        console.error('ORGANISER CLUB LIST ERROR:', error);
+        res.status(500).json({ error: 'Could not load clubs' });
+    }
+});
+
+router.post('/clubs', async (req, res) => {
+    try {
+        const { name } = req.body as { name?: unknown };
+        if (typeof name !== 'string' || !name.trim() || name.trim().length > 80) {
+            res.status(400).json({ error: 'Club name must be between 1 and 80 characters' });
+            return;
+        }
+        const inviteCode = createInviteCode();
+        const club = await Club.create({
+            ownerId: req.user.id,
+            name: name.trim(),
+            inviteCodeHash: await bcrypt.hash(inviteCode, 10)
+        });
+        res.status(201).json({
+            id: club._id.toString(),
+            name: club.name,
+            isDefault: false,
+            hasInviteCode: true,
+            inviteCode
+        });
+    } catch (error) {
+        console.error('ORGANISER CLUB CREATE ERROR:', error);
+        res.status(500).json({ error: 'Could not create club' });
+    }
+});
+
+router.patch('/clubs/:id', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const { name } = req.body as { name?: unknown };
+        if (typeof name !== 'string' || !name.trim() || name.trim().length > 80) {
+            res.status(400).json({ error: 'Club name must be between 1 and 80 characters' });
+            return;
+        }
+        club.name = name.trim();
+        await club.save();
+        res.json({
+            id: club._id.toString(),
+            name: club.name,
+            isDefault: club.isDefault,
+            hasInviteCode: Boolean(club.inviteCodeHash)
+        });
+    } catch (error) {
+        console.error('ORGANISER CLUB UPDATE ERROR:', error);
+        res.status(500).json({ error: 'Could not update club name' });
+    }
+});
+
+router.post('/clubs/:id/invite-code', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const inviteCode = createInviteCode();
+        club.inviteCodeHash = await bcrypt.hash(inviteCode, 10);
+        await club.save();
+        res.json({ inviteCode, hasInviteCode: true });
+    } catch (error) {
+        console.error('ORGANISER CLUB INVITE CODE ERROR:', error);
+        res.status(500).json({ error: 'Could not generate invite code' });
+    }
+});
+
+router.get('/clubs/:id/members', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const status = req.query.status === 'approved' ? 'approved' : 'pending';
+        const users = await User.find({
+            clubs: { $elemMatch: { clubId: club._id, status } },
+            isDeleted: { $ne: true }
+        }).select('username age level rating clubs').sort({ username: 1 }).lean();
+        res.json(users.map((user) => {
+            const membership = user.clubs.find((entry) => entry.clubId.toString() === club._id.toString());
+            return {
+                userId: user._id.toString(),
+                username: user.username,
+                age: user.age,
+                level: user.level,
+                rating: user.rating,
+                status: membership?.status,
+                requestedAt: membership?.requestedAt
+            };
+        }));
+    } catch (error) {
+        console.error('ORGANISER CLUB MEMBER LIST ERROR:', error);
+        res.status(500).json({ error: 'Could not load club members' });
+    }
+});
+
+router.patch('/clubs/:id/members/:userId/approve', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        if (!/^[a-f\d]{24}$/i.test(req.params.userId)) {
+            res.status(400).json({ error: 'Player id is invalid' });
+            return;
+        }
+        const user = await User.findOne({
+            _id: req.params.userId,
+            clubs: { $elemMatch: { clubId: club._id, status: 'pending' } },
+            isDeleted: { $ne: true }
+        });
+        if (!user) {
+            res.status(404).json({ error: 'Pending membership request not found' });
+            return;
+        }
+        const membership = user.clubs.find((entry) =>
+            entry.clubId.toString() === club._id.toString() && entry.status === 'pending'
+        );
+        if (!membership) {
+            res.status(404).json({ error: 'Pending membership request not found' });
+            return;
+        }
+        membership.status = 'approved';
+        membership.approvedAt = new Date();
+        await user.save();
+        res.json({ message: 'Player approved' });
+    } catch (error) {
+        console.error('ORGANISER CLUB APPROVAL ERROR:', error);
+        res.status(500).json({ error: 'Could not approve membership request' });
+    }
+});
+
+router.post('/clubs/:id/players', async (req, res) => {
+    try {
+        const club = await findOwnedClub(req.params.id, req.user.id);
+        if (!club) {
+            res.status(404).json({ error: 'Club not found' });
+            return;
+        }
+        const { username, password, age, level } = req.body as {
+            username?: unknown;
+            password?: unknown;
+            age?: unknown;
+            level?: unknown;
+        };
+        if (typeof username !== 'string' || !username.trim() ||
+            typeof password !== 'string' || password.length < 8) {
+            res.status(400).json({ error: 'Username is required and password must be at least 8 characters' });
+            return;
+        }
+        const organiserUsername = process.env.INITIAL_ORGANISER_USERNAME?.trim() || '1234';
+        if (username.trim() === organiserUsername) {
+            res.status(409).json({ error: 'This username is reserved for organiser account setup' });
+            return;
+        }
+        if (age !== undefined && age !== '' && (!Number.isFinite(Number(age)) || Number(age) < 1 || Number(age) > 120)) {
+            res.status(400).json({ error: 'Age must be a number between 1 and 120' });
+            return;
+        }
+        const levelRatingMap: Record<string, number> = {
+            Beginner: 600,
+            'Weekly casual': 800,
+            'Tier 1/2/3 BE': 2000,
+            'Bi-weekly casual': 1000,
+            'Occasional tournament player': 1600,
+            'ISO medal holder': 1800,
+            'Badminton England rated': 1700
+        };
+        const selectedLevel = typeof level === 'string' && level ? level : 'Beginner';
+        const player = await User.create({
+            username: username.trim(),
+            password: await bcrypt.hash(password, 10),
+            age: age ? Number(age) : undefined,
+            level: selectedLevel,
+            rating: levelRatingMap[selectedLevel] ?? 1500,
+            rd: 350,
+            vol: 0.06,
+            clubs: [{
+                clubId: club._id,
+                status: 'approved',
+                requestedAt: new Date(),
+                approvedAt: new Date()
+            }]
+        });
+        res.status(201).json({
+            username: player.username,
+            age: player.age,
+            level: player.level,
+            rating: player.rating
+        });
+    } catch (error) {
+        if (isDuplicateKeyError(error)) {
+            res.status(409).json({ error: 'Username already exists' });
+            return;
+        }
+        console.error('ORGANISER CLUB PLAYER CREATE ERROR:', error);
+        res.status(500).json({ error: 'Could not register player' });
+    }
+});
 
 router.get('/players', async (req, res) => {
     try {
-        const players = await User.find({ isDeleted: { $ne: true }, $or: [{ role: 'player' }, { role: { $exists: false } }] })
+        const club = await findOwnedClub(req.query.clubId, req.user.id);
+        if (!club) {
+            res.status(400).json({ error: 'Select a valid club' });
+            return;
+        }
+        const players = await User.find({
+            isDeleted: { $ne: true },
+            $or: [{ role: 'player' }, { role: { $exists: false } }],
+            clubs: { $elemMatch: { clubId: club._id, status: 'approved' } }
+        })
             .select('username age level rating')
             .sort({ username: 1 })
             .lean();
@@ -44,7 +335,12 @@ router.get('/players', async (req, res) => {
 
 router.get('/sessions', async (req, res) => {
     try {
-        const sessions = await Session.find({ adminId: req.user.id })
+        const club = await findOwnedClub(req.query.clubId, req.user.id);
+        if (!club) {
+            res.status(400).json({ error: 'Select a valid club' });
+            return;
+        }
+        const sessions = await Session.find({ adminId: req.user.id, clubId: club._id })
             .sort({ scheduledAt: 1, createdAt: -1 })
             .limit(100);
         res.json(sessions);
@@ -76,7 +372,12 @@ router.delete('/sessions/:id', async (req, res) => {
 
 router.get('/player-stats', async (req, res) => {
     try {
-        const sessions = await Session.find({ adminId: req.user.id })
+        const club = await findOwnedClub(req.query.clubId, req.user.id);
+        if (!club) {
+            res.status(400).json({ error: 'Select a valid club' });
+            return;
+        }
+        const sessions = await Session.find({ adminId: req.user.id, clubId: club._id })
             .select('title scheduledAt players matches')
             .lean();
         const registeredPlayerNames = new Set(
@@ -230,12 +531,18 @@ router.get('/player-stats', async (req, res) => {
 
 router.post('/sessions', async (req, res) => {
     try {
-        const { title, scheduledAt, endsAt, venue } = req.body as {
+        const { title, scheduledAt, endsAt, venue, clubId } = req.body as {
             title?: unknown;
             scheduledAt?: unknown;
             endsAt?: unknown;
             venue?: unknown;
+            clubId?: unknown;
         };
+        const club = await findOwnedClub(clubId, req.user.id);
+        if (!club) {
+            res.status(400).json({ error: 'Select a valid club for this session' });
+            return;
+        }
         const parsedStart = typeof scheduledAt === 'string' ? new Date(scheduledAt) : null;
         const parsedEnd = typeof endsAt === 'string' && endsAt ? new Date(endsAt) : null;
 
@@ -262,6 +569,7 @@ router.post('/sessions', async (req, res) => {
             isActive: false,
             status: 'scheduled',
             adminId: req.user.id,
+            clubId: club._id,
             players: [],
             matches: [],
             courtFormats: []
@@ -375,6 +683,12 @@ router.post('/sessions/:id/start', async (req, res) => {
                 res.status(404).json({ error: `Account "${username}" was not found` });
                 return;
             }
+            if (user && !user.clubs.some((membership) =>
+                membership.clubId.toString() === session.clubId?.toString() && membership.status === 'approved'
+            )) {
+                res.status(403).json({ error: `"${username}" is not an approved member of this session's club` });
+                return;
+            }
             if (player.kind === 'guest' && await User.exists({ username })) {
                 res.status(409).json({ error: `"${username}" already has an account; select the account instead` });
                 return;
@@ -450,6 +764,12 @@ router.post('/sessions/:id/players', async (req, res) => {
         const user = kind === 'account' ? await User.findOne({ username, isDeleted: { $ne: true } }) : null;
         if (kind === 'account' && !user) {
             res.status(404).json({ error: 'Player account not found' });
+            return;
+        }
+        if (user && !user.clubs.some((membership) =>
+            membership.clubId.toString() === session.clubId?.toString() && membership.status === 'approved'
+        )) {
+            res.status(403).json({ error: 'Player is not an approved member of this session club' });
             return;
         }
         if (kind === 'guest' && await User.exists({ username })) {

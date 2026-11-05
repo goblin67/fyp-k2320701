@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface AuthFormData {
@@ -6,6 +6,13 @@ interface AuthFormData {
     password: string;
     age?: string;
     level?: string;
+    clubId?: string;
+    clubCode?: string;
+}
+
+interface PublicClub {
+    id: string;
+    name: string;
 }
 
 interface AuthResponse {
@@ -26,7 +33,27 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
     const navigate = useNavigate();
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState<AuthFormData>({ username: '', password: '' });
+    const [clubs, setClubs] = useState<PublicClub[]>([]);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (isLogin) return;
+        let cancelled = false;
+        const loadClubs = async () => {
+            try {
+                const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/clubs`);
+                if (!response.ok) throw new Error('Could not load clubs');
+                const data = await response.json() as PublicClub[];
+                if (!cancelled) setClubs(data);
+            } catch (requestError) {
+                if (!cancelled) setError(getErrorMessage(requestError));
+            }
+        };
+        void loadClubs();
+        return () => {
+            cancelled = true;
+        };
+    }, [isLogin]);
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -37,7 +64,8 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
             username: formData.username,
             password: formData.password,
             age: formData.age,
-            level: formData.level || 'Beginner'
+            level: formData.level || 'Beginner',
+            ...(formData.clubId ? { clubId: formData.clubId, clubCode: formData.clubCode } : {})
         };
 
         try {
@@ -60,7 +88,7 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                 if (onLoginSuccess) onLoginSuccess(data.role, organiserAccess);
                 navigate('/');
             } else {
-                alert("Account created! Please login.");
+                alert(`Account created! Please login.${formData.clubId ? ' Your club membership request will be pending until an organiser approves it.' : ''}`);
                 setIsLogin(true);
                 setFormData({ username: '', password: '', age: '', level: 'Beginner' });
             }
@@ -104,8 +132,8 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                     {error && <div className="auth-error">{error}</div>}
 
                     <div className="auth-switch">
-                        <button className={isLogin ? 'active' : ''} onClick={() => setIsLogin(true)}>Login</button>
-                        <button className={!isLogin ? 'active' : ''} onClick={() => setIsLogin(false)}>Register</button>
+                        <button className={isLogin ? 'active' : ''} onClick={() => { setError(''); setIsLogin(true); }}>Login</button>
+                        <button className={!isLogin ? 'active' : ''} onClick={() => { setError(''); setIsLogin(false); }}>Register</button>
                     </div>
 
                     <form className="auth-form" onSubmit={handleSubmit}>
@@ -143,6 +171,23 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                                     <option value="ISO medal holder">ISO medal holder (1800 rating)</option>
                                     <option value="Badminton England rated">Badminton England rated (1700 rating)</option>
                                 </select>
+                                <select
+                                    value={formData.clubId || ''}
+                                    onChange={(e) => setFormData({ ...formData, clubId: e.target.value, clubCode: '' })}
+                                >
+                                    <option value="">Join a club later (optional)</option>
+                                    {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+                                </select>
+                                {formData.clubId && (
+                                    <input
+                                        type="text"
+                                        placeholder="Club invite code"
+                                        autoComplete="off"
+                                        required
+                                        value={formData.clubCode || ''}
+                                        onChange={(e) => setFormData({ ...formData, clubCode: e.target.value })}
+                                    />
+                                )}
                             </>
                         )}
                         <button type="submit">{isLogin ? 'Login' : 'Create Account'}</button>

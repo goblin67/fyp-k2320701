@@ -1,4 +1,5 @@
 import type { SettingsPageProps } from '../dashboard.types';
+import ClubMembershipSection from './ClubMembershipSection';
 
 const SettingsPage = ({
     username,
@@ -64,6 +65,7 @@ const SettingsPage = ({
                 </label>
                 <button className="btn-danger" type="submit" disabled={busy}>Delete my account</button>
             </form>
+            <ClubMembershipSection />
         </div>
     </section>
 );

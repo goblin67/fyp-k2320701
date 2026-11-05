@@ -1,0 +1,122 @@
+.club-membership {
+    margin-top: 20px;
+    padding: 22px;
+    border: 1px solid rgba(135, 159, 174, 0.22);
+    border-radius: 10px;
+    background: rgba(15, 23, 28, 0.72);
+}
+
+.club-membership-heading h4 {
+    margin: 5px 0 7px;
+}
+
+.club-membership-heading p,
+.club-membership-empty {
+    margin: 0;
+    color: #9aabb2;
+}
+
+.club-membership-kicker {
+    color: #75c4f4;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.club-membership-list {
+    display: grid;
+    gap: 8px;
+    margin: 18px 0;
+    padding: 0;
+    list-style: none;
+}
+
+.club-membership-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(135, 159, 174, 0.18);
+    border-radius: 7px;
+    background: rgba(7, 13, 17, 0.54);
+}
+
+.club-membership-status {
+    color: #c4d2d6;
+    font-size: 0.86rem;
+}
+
+.club-membership-status.approved {
+    color: #c8f169;
+}
+
+.club-membership-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.club-membership-form label {
+    display: grid;
+    gap: 7px;
+    color: #c4d2d6;
+    font-size: 0.9rem;
+}
+
+.club-membership-form input,
+.club-membership-form select {
+    min-width: 0;
+    padding: 11px 12px;
+    border: 1px solid rgba(135, 159, 174, 0.3);
+    border-radius: 6px;
+    color: #eef5f5;
+    background: #0b1216;
+    font: inherit;
+}
+
+.club-membership-form button {
+    grid-column: 1 / -1;
+    justify-self: start;
+    padding: 11px 16px;
+    border: 1px solid #c8f169;
+    border-radius: 6px;
+    color: #101914;
+    background: #c8f169;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.club-membership-form button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.club-membership-alert,
+.club-membership-success {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 6px;
+}
+
+.club-membership-alert {
+    color: #ffaaa7;
+    background: rgba(255, 109, 105, 0.1);
+}
+
+.club-membership-success {
+    color: #c8f169;
+    background: rgba(200, 241, 105, 0.09);
+}
+
+@media (max-width: 600px) {
+    .club-membership-form {
+        grid-template-columns: 1fr;
+    }
+
+    .club-membership-form button {
+        grid-column: auto;
+    }
+}

@@ -4,10 +4,26 @@ import './organiser.css';
 
 type Format = 'singles' | 'doubles';
 type PlayerKind = 'account' | 'guest';
-type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary' | 'player-stats';
+type Screen = 'sessions' | 'details' | 'setup' | 'live' | 'summary' | 'player-stats' | 'clubs';
 type MatchLineup = [string, string, string?, string?];
 
 interface PlayerAccount {
+    username: string;
+    age?: number;
+    level?: string;
+    rating: number;
+}
+
+interface OrganiserClub {
+    id: string;
+    name: string;
+    isDefault: boolean;
+    hasInviteCode: boolean;
+    inviteCode?: string;
+}
+
+interface ClubMember {
+    userId: string;
     username: string;
     age?: number;
     level?: string;
@@ -477,6 +493,12 @@ const downloadPlayerPerformancesCsv = (session: SessionData) => {
 
 const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) => {
     const [screen, setScreen] = useState<Screen>('sessions');
+    const [clubs, setClubs] = useState<OrganiserClub[]>([]);
+    const [selectedClubId, setSelectedClubId] = useState('');
+    const [pendingMembers, setPendingMembers] = useState<ClubMember[]>([]);
+    const [newClubName, setNewClubName] = useState('');
+    const [clubNameDraft, setClubNameDraft] = useState('');
+    const [inviteCode, setInviteCode] = useState('');
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
     const [playerAccounts, setPlayerAccounts] = useState<PlayerAccount[]>([]);
@@ -506,15 +528,42 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
     useEffect(() => {
         let cancelled = false;
-        const loadData = async () => {
+        const loadClubs = async () => {
             try {
-                const [sessionData, accountData] = await Promise.all([
-                    apiRequest<SessionData[]>('/sessions'),
-                    apiRequest<PlayerAccount[]>('/players')
+                const clubData = await apiRequest<OrganiserClub[]>('/clubs');
+                if (!cancelled) {
+                    setClubs(clubData);
+                    setSelectedClubId(clubData[0]?.id ?? '');
+                    setClubNameDraft(clubData[0]?.name ?? '');
+                    if (!clubData.length) setLoading(false);
+                }
+            } catch (requestError) {
+                if (!cancelled) setError(getErrorMessage(requestError));
+                if (!cancelled) setLoading(false);
+            }
+        };
+        void loadClubs();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!selectedClubId) return;
+        let cancelled = false;
+        const loadClubData = async () => {
+            setLoading(true);
+            try {
+                const query = `?clubId=${encodeURIComponent(selectedClubId)}`;
+                const [sessionData, accountData, pendingData] = await Promise.all([
+                    apiRequest<SessionData[]>(`/sessions${query}`),
+                    apiRequest<PlayerAccount[]>(`/players${query}`),
+                    apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`)
                 ]);
                 if (!cancelled) {
                     setSessions(sessionData);
                     setPlayerAccounts(accountData);
+                    setPendingMembers(pendingData);
                 }
             } catch (requestError) {
                 if (!cancelled) setError(getErrorMessage(requestError));
@@ -522,11 +571,11 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 if (!cancelled) setLoading(false);
             }
         };
-        void loadData();
+        void loadClubData();
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [selectedClubId]);
 
     useEffect(() => {
         if (screen !== 'live') return;
@@ -540,16 +589,111 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     };
 
     const openPlayerStats = async () => {
+        if (!selectedClubId) return;
         setScreen('player-stats');
         setPlayerStatsLoading(true);
         setError('');
         try {
-            const stats = await apiRequest<OrganiserPlayerStats[]>('/player-stats');
+            const stats = await apiRequest<OrganiserPlayerStats[]>(`/player-stats?clubId=${encodeURIComponent(selectedClubId)}`);
             setPlayerStats(stats);
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
             setPlayerStatsLoading(false);
+        }
+    };
+
+    const changeActiveClub = (clubId: string) => {
+        setSelectedClubId(clubId);
+        setSelectedSession(null);
+        setFormMode(null);
+        setInviteCode('');
+        setScreen('sessions');
+    };
+
+    const createClub = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const club = await apiRequest<OrganiserClub>('/clubs', {
+                method: 'POST',
+                body: JSON.stringify({ name: newClubName.trim() })
+            });
+            setClubs((current) => [...current, club].sort((a, b) =>
+                Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name)
+            ));
+            setNewClubName('');
+            setInviteCode(club.inviteCode ?? '');
+            setSelectedClubId(club.id);
+            setClubNameDraft(club.name);
+            setNotice('Club created. Copy and share this invite code; it will not be shown again.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const renameClub = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!selectedClubId) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const club = await apiRequest<OrganiserClub>(`/clubs/${selectedClubId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ name: clubNameDraft.trim() })
+            });
+            setClubs((current) => current.map((item) => item.id === club.id ? { ...item, ...club } : item));
+            setClubNameDraft(club.name);
+            setNotice('Club name updated.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const rotateClubInviteCode = async () => {
+        if (!selectedClubId) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const result = await apiRequest<{ inviteCode: string }>(`/clubs/${selectedClubId}/invite-code`, { method: 'POST' });
+            setInviteCode(result.inviteCode);
+            setClubs((current) => current.map((club) =>
+                club.id === selectedClubId ? { ...club, hasInviteCode: true } : club
+            ));
+            setNotice('Invite code rotated. The previous code is no longer valid.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const approveClubMember = async (member: ClubMember) => {
+        if (!selectedClubId) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            await apiRequest<{ message: string }>(`/clubs/${selectedClubId}/members/${member.userId}/approve`, { method: 'PATCH' });
+            const [pendingData, accountData] = await Promise.all([
+                apiRequest<ClubMember[]>(`/clubs/${selectedClubId}/members?status=pending`),
+                apiRequest<PlayerAccount[]>(`/players?clubId=${encodeURIComponent(selectedClubId)}`)
+            ]);
+            setPendingMembers(pendingData);
+            setPlayerAccounts(accountData);
+            setNotice(`${member.username} approved for ${clubs.find((club) => club.id === selectedClubId)?.name ?? 'the club'}.`);
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -580,7 +724,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 title: sessionForm.title.trim(),
                 scheduledAt: toIsoDateTime(sessionForm.scheduledAt),
                 endsAt: sessionForm.endsAt ? toIsoDateTime(sessionForm.endsAt) : '',
-                venue: sessionForm.venue.trim()
+                venue: sessionForm.venue.trim(),
+                ...(formMode === 'create' ? { clubId: selectedClubId } : {})
             };
             const updated = formMode === 'edit' && selectedSession
                 ? await apiRequest<SessionData>(`/sessions/${selectedSession._id}`, { method: 'PATCH', body: JSON.stringify(body) })
@@ -638,9 +783,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         setBusy(true);
         setError('');
         try {
-            const response = await fetch(`${API_URL}/api/auth/register`, {
+            if (!selectedClubId) throw new Error('Select a club before registering a player.');
+            const registeredPlayer = await apiRequest<PlayerAccount>(`/clubs/${selectedClubId}/players`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     username: newPlayer.username.trim(),
                     password: newPlayer.password,
@@ -648,17 +793,15 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     level: newPlayer.level
                 })
             });
-            const body = await response.json() as ApiError;
-            if (!response.ok) throw new Error(body.error ?? 'Could not register player');
 
             const selection: PlayerSelection = {
-                username: newPlayer.username.trim(),
+                username: registeredPlayer.username,
                 kind: 'account',
                 preferredFormat: newPlayer.preferredFormat,
-                age: newPlayer.age ? Number(newPlayer.age) : undefined,
-                level: newPlayer.level
+                age: registeredPlayer.age,
+                level: registeredPlayer.level
             };
-            const accounts = await apiRequest<PlayerAccount[]>('/players');
+            const accounts = await apiRequest<PlayerAccount[]>(`/players?clubId=${encodeURIComponent(selectedClubId)}`);
             setPlayerAccounts(accounts);
             if (screen === 'setup') {
                 setSelectedPlayers((current) => [...current, selection]);
@@ -945,10 +1088,10 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             <nav className="organiser-workspace-nav" aria-label="Organiser sections" role="tablist">
                 <button
                     id="organiser-matches-tab"
-                    className={screen !== 'player-stats' ? 'active' : ''}
+                    className={screen !== 'player-stats' && screen !== 'clubs' ? 'active' : ''}
                     type="button"
                     role="tab"
-                    aria-selected={screen !== 'player-stats'}
+                    aria-selected={screen !== 'player-stats' && screen !== 'clubs'}
                     aria-controls="organiser-matches-panel"
                     onClick={() => setScreen('sessions')}
                 >
@@ -965,7 +1108,34 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 >
                     Player Stats
                 </button>
+                <button
+                    id="organiser-clubs-tab"
+                    className={screen === 'clubs' ? 'active' : ''}
+                    type="button"
+                    role="tab"
+                    aria-selected={screen === 'clubs'}
+                    aria-controls="organiser-clubs-panel"
+                    onClick={() => setScreen('clubs')}
+                >
+                    Clubs
+                </button>
             </nav>
+
+            {clubs.length > 0 && screen !== 'clubs' && (
+                <div className="organiser-card organiser-club-context">
+                    <label>Active club
+                        <select
+                            value={selectedClubId}
+                            onChange={(event) => {
+                                changeActiveClub(event.target.value);
+                                setClubNameDraft(clubs.find((club) => club.id === event.target.value)?.name ?? '');
+                            }}
+                        >
+                            {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+                        </select>
+                    </label>
+                </div>
+            )}
 
             {screen === 'player-stats' && (
                 <section className="organiser-card" id="organiser-player-stats-panel" role="tabpanel" aria-labelledby="organiser-player-stats-tab">
@@ -1033,6 +1203,116 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         </div>
                     ) : (
                         <p className="organiser-muted">No registered players have played in your sessions yet.</p>
+                    )}
+                </section>
+            )}
+
+            {screen === 'clubs' && (
+                <section className="organiser-card" id="organiser-clubs-panel" role="tabpanel" aria-labelledby="organiser-clubs-tab">
+                    <div className="organiser-section-heading">
+                        <div>
+                            <span className="organiser-eyebrow">MEMBERSHIP AND ACCESS</span>
+                            <h2>Club management</h2>
+                            <p>Each session uses one club roster. Members need organiser approval before they appear in session setup.</p>
+                        </div>
+                    </div>
+                    <div className="organiser-form-grid organiser-club-manager">
+                        <label>Selected club
+                            <select value={selectedClubId} onChange={(event) => {
+                                setSelectedClubId(event.target.value);
+                                setClubNameDraft(clubs.find((club) => club.id === event.target.value)?.name ?? '');
+                                setInviteCode('');
+                            }}>
+                                {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+                            </select>
+                        </label>
+                        <form className="organiser-form compact" onSubmit={(event) => void createClub(event)}>
+                            <label>Create another club
+                                <input
+                                    required
+                                    maxLength={80}
+                                    value={newClubName}
+                                    onChange={(event) => setNewClubName(event.target.value)}
+                                    placeholder="Club name"
+                                />
+                            </label>
+                            <button className="organiser-button secondary" type="submit" disabled={busy}>
+                                {busy ? 'Creating…' : 'Create club'}
+                            </button>
+                        </form>
+                    </div>
+                    {selectedClubId && (
+                        <form className="organiser-form compact organiser-club-rename" onSubmit={(event) => void renameClub(event)}>
+                            <label>Rename selected club
+                                <input
+                                    required
+                                    maxLength={80}
+                                    value={clubNameDraft}
+                                    onChange={(event) => setClubNameDraft(event.target.value)}
+                                />
+                            </label>
+                            <button className="organiser-button secondary" type="submit" disabled={busy || !clubNameDraft.trim()}>
+                                {busy ? 'Saving…' : 'Save club name'}
+                            </button>
+                        </form>
+                    )}
+
+                    {selectedClubId && (
+                        <>
+                            <section className="organiser-subcard">
+                                <div className="organiser-section-heading">
+                                    <div>
+                                        <h3>Invite code</h3>
+                                        <p>Only a hashed version is stored. Rotating it invalidates the previous code.</p>
+                                    </div>
+                                    <button
+                                        className="organiser-button secondary"
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => void rotateClubInviteCode()}
+                                    >
+                                        {clubs.find((club) => club.id === selectedClubId)?.hasInviteCode ? 'Rotate code' : 'Generate code'}
+                                    </button>
+                                </div>
+                                {inviteCode ? (
+                                    <p className="organiser-club-code" role="status">{inviteCode}</p>
+                                ) : (
+                                    <p className="organiser-muted">
+                                        {clubs.find((club) => club.id === selectedClubId)?.hasInviteCode
+                                            ? 'The current code is hidden. Rotate it to generate a new shareable code.'
+                                            : 'Generate a code to let players request membership.'}
+                                    </p>
+                                )}
+                            </section>
+                            <section className="organiser-subcard">
+                                <div className="organiser-section-heading">
+                                    <div>
+                                        <h3>Pending requests ({pendingMembers.length})</h3>
+                                        <p>Approving a request adds that player to this club’s session roster.</p>
+                                    </div>
+                                </div>
+                                {pendingMembers.length ? (
+                                    <div className="organiser-roster">
+                                        {pendingMembers.map((member) => (
+                                            <div className="organiser-roster-row" key={member.userId}>
+                                                <span>
+                                                    <strong>{member.username}</strong>
+                                                    <small>{member.level ?? 'Player'} · ELO {member.rating}</small>
+                                                </span>
+                                                <button
+                                                    className="organiser-button secondary"
+                                                    type="button"
+                                                    disabled={busy}
+                                                    onClick={() => void approveClubMember(member)}
+                                                >
+                                                    Approve
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="organiser-muted">There are no pending membership requests.</p>}
+                            </section>
+                        </>
                     )}
                 </section>
             )}

@@ -52,6 +52,7 @@ export interface SessionRecord {
   venue?: string;
   courtFormats: PlayFormat[];
   adminId: Types.ObjectId;
+  clubId?: Types.ObjectId;
   players: SessionPlayer[];
   matches: SessionMatch[];
   endedAt?: Date;
@@ -104,6 +105,7 @@ const sessionSchema = new Schema<SessionRecord>({
   venue: String,
   courtFormats: { type: [String], enum: ['singles', 'doubles'], default: [] },
   adminId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  clubId: { type: Schema.Types.ObjectId, ref: 'Club' },
   players: { type: [playerSchema], default: [] },
   matches: { type: [matchSchema], default: [] },
   endedAt: Date,

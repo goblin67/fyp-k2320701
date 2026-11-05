@@ -62,6 +62,7 @@ export interface SessionData {
   scheduledAt?: string | Date;
   endsAt?: string | Date;
   venue?: string;
+  clubId?: string;
   courtFormats?: ('singles' | 'doubles')[];
   adminId: string;
   players: SessionPlayer[];

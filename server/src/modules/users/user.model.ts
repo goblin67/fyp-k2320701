@@ -9,6 +9,13 @@ export interface MatchHistoryEntry {
   matchDate: Date;
 }
 
+export interface ClubMembership {
+  clubId: mongoose.Types.ObjectId;
+  status: 'pending' | 'approved';
+  requestedAt: Date;
+  approvedAt?: Date;
+}
+
 export interface UserRecord {
   username: string;
   password: string;
@@ -21,6 +28,7 @@ export interface UserRecord {
   rd: number;
   vol: number;
   matchHistory: MatchHistoryEntry[];
+  clubs: ClubMembership[];
 }
 
 export type UserDocument = mongoose.HydratedDocument<UserRecord>;
@@ -34,6 +42,13 @@ const matchHistorySchema = new Schema<MatchHistoryEntry>({
   matchDate: { type: Date, default: Date.now },
 });
 
+const clubMembershipSchema = new Schema<ClubMembership>({
+  clubId: { type: Schema.Types.ObjectId, ref: 'Club', required: true },
+  status: { type: String, enum: ['pending', 'approved'], required: true },
+  requestedAt: { type: Date, default: Date.now },
+  approvedAt: Date
+}, { _id: false });
+
 const userSchema = new Schema<UserRecord>({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -46,6 +61,7 @@ const userSchema = new Schema<UserRecord>({
   rd: { type: Number, default: 350 },
   vol: { type: Number, default: 0.06 },
   matchHistory: { type: [matchHistorySchema], default: [] },
+  clubs: { type: [clubMembershipSchema], default: [] },
 });
 
 const User = mongoose.model<UserRecord>('User', userSchema);

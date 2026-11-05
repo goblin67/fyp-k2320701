@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import authRoutes from './modules/auth/auth.routes.js';
 import apiRoutes from './modules/sessions/session.routes.js';
 import organiserRoutes from './modules/sessions/organiser.routes.js';
+import clubRoutes from './modules/clubs/club.routes.js';
 import dns from 'node:dns';
 
 // Force Node.js to use Google DNS
@@ -27,6 +28,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', apiRoutes);
 app.use('/api/session', apiRoutes);
 app.use('/api/organiser', organiserRoutes);
+app.use('/api/clubs', clubRoutes);
 
 const buildPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(buildPath));

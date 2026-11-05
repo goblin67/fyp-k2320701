@@ -87,6 +87,71 @@
     background: #c8f169;
 }
 
+.organiser-club-context {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    padding: 14px 18px;
+}
+
+.organiser-club-context label,
+.organiser-club-manager label {
+    display: grid;
+    gap: 7px;
+    color: #c4d2d6;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.organiser-club-context select,
+.organiser-club-manager select,
+.organiser-club-manager input {
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #354453;
+    border-radius: 6px;
+    color: #eef5f5;
+    background: #0b1216;
+    font: inherit;
+}
+
+.organiser-club-manager {
+    margin: 18px 0;
+    align-items: end;
+}
+
+.organiser-club-manager .organiser-form {
+    align-items: end;
+}
+
+.organiser-club-rename {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    margin: 0 0 18px;
+    padding: 16px;
+    border: 1px solid rgba(135, 159, 174, 0.18);
+    border-radius: 8px;
+    background: rgba(7, 13, 17, 0.38);
+}
+
+.organiser-club-rename button {
+    min-height: 42px;
+}
+
+.organiser-club-code {
+    display: inline-block;
+    margin: 4px 0 0;
+    padding: 10px 14px;
+    border: 1px dashed #c8f169;
+    border-radius: 5px;
+    color: #c8f169;
+    background: #0b1216;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    user-select: all;
+}
+
 .organiser-topbar p,
 .organiser-section-heading p {
     margin: 0;

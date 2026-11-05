@@ -2,13 +2,17 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import type { RequestHandler } from 'express';
+import type { Types } from 'mongoose';
 import User from '../users/user.model.js';
+import Club from '../clubs/club.model.js';
 
 interface RegisterRequest {
     username: string;
     password: string;
     age?: string | number;
     level?: string;
+    clubId?: string;
+    clubCode?: string;
 }
 
 interface LoginRequest {
@@ -33,10 +37,32 @@ const isDuplicateUsername = (error: unknown): boolean =>
 // Register
 const register: RequestHandler<Record<string, never>, AuthResponse, RegisterRequest> = async (req, res) => {
     try {
-        const { username, password, age, level } = req.body;
+        const { username, password, age, level, clubId, clubCode } = req.body;
         if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || password.length < 8) {
             res.status(400).json({ error: 'Username is required and password must be at least 8 characters' });
             return;
+        }
+        const hasClubId = typeof clubId === 'string' && clubId.length > 0;
+        const hasClubCode = typeof clubCode === 'string' && clubCode.trim().length > 0;
+        if ((clubId !== undefined && typeof clubId !== 'string') ||
+            (clubCode !== undefined && typeof clubCode !== 'string') ||
+            hasClubId !== hasClubCode ||
+            (typeof clubCode === 'string' && clubCode.length > 100)) {
+            res.status(400).json({ error: 'Choose a club and enter its invite code, or leave both blank' });
+            return;
+        }
+        let membership: { clubId: Types.ObjectId; status: 'pending'; requestedAt: Date } | undefined;
+        if (hasClubId && hasClubCode) {
+            if (!/^[a-f\d]{24}$/i.test(clubId)) {
+                res.status(400).json({ error: 'Selected club is invalid' });
+                return;
+            }
+            const club = await Club.findById(clubId).select('inviteCodeHash');
+            if (!club?.inviteCodeHash || !(await bcrypt.compare(clubCode.trim(), club.inviteCodeHash))) {
+                res.status(400).json({ error: 'The club invite code is invalid' });
+                return;
+            }
+            membership = { clubId: club._id, status: 'pending', requestedAt: new Date() };
         }
         const organiserUsername = process.env.INITIAL_ORGANISER_USERNAME?.trim() || '1234';
         if (username.trim() === organiserUsername) {
@@ -64,7 +90,8 @@ const register: RequestHandler<Record<string, never>, AuthResponse, RegisterRequ
             level: level || 'Beginner',
             rating: initialRating,
             rd: 350,
-            vol: 0.06
+            vol: 0.06,
+            ...(membership ? { clubs: [membership] } : {})
         });
         await user.save();
         res.status(201).json({ message: "User Created" });

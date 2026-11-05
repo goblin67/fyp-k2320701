@@ -13,6 +13,7 @@ The app addresses the practical overhead of running a badminton session: manuall
 - View a leaderboard for players who share session history.
 - Track factual achievements, such as completed-match and points-scored milestones.
 - View session history and the summaries for sessions available to the account.
+- Request membership in one or more clubs during registration or later in account settings using an organiser-provided invite code.
 - Change a password, export account data as JSON, or delete an account.
 - See their active match/session and participate in organiser-managed queues and matches.
 
@@ -27,6 +28,7 @@ ELO-style ratings are maintained by the backend and used for ranking, but are no
 - Download ranked session summaries.
 - View a Player Stats leaderboard for registered players who have participated in the organiser's sessions, including rating and lifetime performance statistics.
 - Export the organiser's leaderboard and individual players' lifetime match histories.
+- Create and rename clubs, rotate shareable invite codes, approve membership requests, and manage separate club rosters and sessions.
 
 Guest participation remains scoped to its session and is not included in registered players' all-time leaderboard/history.
 
@@ -69,7 +71,8 @@ client/
       auth/                     Login and registration
       dashboard/                Player dashboard and page components
         pages/                  Overview, leaderboard, histories, settings,
-                                achievements, session summary, active match
+                                achievements, club memberships, session summary,
+                                active match
       organiser/                Organiser interface and styles
     types/                      Shared client-side domain types
   public/                       Static client assets
@@ -79,6 +82,7 @@ server/
     index.ts                    Express setup, API mounts, database connection
     modules/
       auth/                     Authentication and access-control middleware/routes
+      clubs/                    Club model and player membership APIs
       sessions/                 Session model, player/session APIs, organiser APIs,
                                 match and rating logic
       users/                    User model
@@ -89,16 +93,17 @@ package.json                    Root workspace and build/start commands
 
 The client uses top-level routes for authentication and the signed-in application. Player dashboard screens are separate React components rendered within the dashboard; the dashboard retains shared state and API actions needed across screens. Organiser screens are in a distinct organiser panel.
 
-The server is organised by feature modules. `server/src/index.ts` mounts authentication, player/session, and organiser APIs, connects to MongoDB, and serves the production client build. TypeScript output is written to `server/dist`; that directory contains generated JavaScript and source maps, not the maintained server source.
+The server is organised by feature modules. `server/src/index.ts` mounts authentication, club, player/session, and organiser APIs, connects to MongoDB, and serves the production client build. Existing organisers receive a default club when they first open the organiser workspace; their legacy sessions and registered session players are migrated into that club. TypeScript output is written to `server/dist`; that directory contains generated JavaScript and source maps, not the maintained server source.
 
 ## Backend functionality
 
 - **Authentication:** registration and login endpoints; passwords are hashed; successful login returns a signed token and role/access information.
 - **Access control:** authenticated API middleware protects account and session operations; organiser middleware limits organiser endpoints.
 - **Account management:** profile and match-history retrieval, password changes, JSON data export, and account deletion while preserving historical session results.
+- **Club membership:** public club discovery, invite-code verification, pending membership requests, organiser approvals, and club-scoped approved player rosters. Invite codes are stored as password hashes.
 - **Sessions and matches:** session creation/management, active session and history retrieval, player queue management, match lineup handling, scoring, winner recording, and session closure.
 - **Ratings and records:** finished matches update registered players' match history and rating data; APIs calculate leaderboards, lifetime points, and organiser player statistics.
-- **Organiser APIs:** retrieve registered players and organiser-owned sessions, create/update/start sessions, manage participants and match lineups, finish matches, and retrieve player lifetime stats.
+- **Organiser APIs:** manage clubs and invite codes, approve membership requests, retrieve club-scoped players and sessions, create/update/start sessions, manage participants and match lineups, finish matches, and retrieve club-scoped player stats.
 - **Client delivery:** the production Express server serves the built Vite application and routes non-API GET requests to the client entry page.
 
 ## Local development
