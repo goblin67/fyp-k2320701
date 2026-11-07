@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import type { SessionData, SessionMatch, SessionPlayer } from '../../types/domain';
 import './organiser.css';
 
@@ -24,6 +25,11 @@ interface OrganiserClub {
     sessionCount: number;
     memberCount: number;
     inviteCode?: string;
+}
+
+interface SessionQr {
+    sessionId: string;
+    code: string;
 }
 
 interface ClubMember {
@@ -509,6 +515,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [inviteCode, setInviteCode] = useState('');
     const [sessions, setSessions] = useState<SessionData[]>([]);
     const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
+    const [sessionQr, setSessionQr] = useState<SessionQr | null>(null);
     const [playerAccounts, setPlayerAccounts] = useState<PlayerAccount[]>([]);
     const [playerStats, setPlayerStats] = useState<OrganiserPlayerStats[]>([]);
     const [playerStatsLoading, setPlayerStatsLoading] = useState(false);
@@ -654,6 +661,36 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             setError(getErrorMessage(requestError));
         } finally {
             setBusy(false);
+        }
+    };
+
+    const generateSessionQr = async () => {
+        if (!selectedSession) return;
+        setBusy(true);
+        setError('');
+        setNotice('');
+        try {
+            const result = await apiRequest<{ code: string }>(`/sessions/${selectedSession._id}/join-qr`, {
+                method: 'POST'
+            });
+            setSessionQr({ sessionId: selectedSession._id, code: result.code });
+            setNotice('Session QR generated. Any previous QR for this session has been disabled.');
+        } catch (requestError) {
+            setError(getErrorMessage(requestError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const copySessionJoinLink = async () => {
+        if (!sessionQr) return;
+        const joinUrl = new URL(`/join/${sessionQr.sessionId}`, window.location.origin);
+        joinUrl.searchParams.set('code', sessionQr.code);
+        try {
+            await navigator.clipboard.writeText(joinUrl.toString());
+            setNotice('Session join link copied.');
+        } catch {
+            setError('Could not copy the join link. You can scan the QR code directly instead.');
         }
     };
 
@@ -1198,6 +1235,33 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         proposedMatches.length === 0 &&
         courts.some((_, index) => !courtMatches.some((match) => match.court === index + 1))
     );
+    const sessionJoinQrCard = selectedSession &&
+        ['scheduled', 'active'].includes(statusOf(selectedSession)) && (
+            <section className="organiser-subcard organiser-session-qr">
+                <div className="organiser-section-heading">
+                    <div>
+                        <h3>Session QR code</h3>
+                        <p>Players scan this to create an account or sign in, then they’re added to this session and its club.</p>
+                    </div>
+                    <button className="organiser-button secondary" type="button" disabled={busy} onClick={() => void generateSessionQr()}>
+                        {busy ? 'Generating…' : 'Generate / replace QR'}
+                    </button>
+                </div>
+                {sessionQr?.sessionId === selectedSession._id && (
+                    <div className="organiser-session-qr-content">
+                        <QRCodeSVG value={(() => {
+                            const joinUrl = new URL(`/join/${sessionQr.sessionId}`, window.location.origin);
+                            joinUrl.searchParams.set('code', sessionQr.code);
+                            return joinUrl.toString();
+                        })()} size={220} level="M" includeMargin />
+                        <button className="organiser-button secondary" type="button" onClick={() => void copySessionJoinLink()}>
+                            Copy session link
+                        </button>
+                        <p className="organiser-muted">Generating a replacement disables the previous QR. This QR works until the session is completed.</p>
+                    </div>
+                )}
+            </section>
+        );
 
     if (loading) {
         return <main className="organiser-shell"><p className="organiser-muted">Loading organiser workspace…</p></main>;
@@ -1717,6 +1781,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 </section>
             )}
 
+            {!formMode && screen === 'details' && sessionJoinQrCard}
+
             {!formMode && screen === 'setup' && selectedSession && (
                 <section className="organiser-card">
                     <button className="organiser-back" type="button" onClick={() => setScreen('details')}>← Session details</button>
@@ -1838,6 +1904,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         </div>
                         <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
                     </div>
+                    {sessionJoinQrCard}
                     <section className="organiser-subcard">
                         <div className="organiser-section-heading">
                             <div><h3>Courts</h3>{fixedClubFormat && <p>All courts use {fixedClubFormat}.</p>}</div>

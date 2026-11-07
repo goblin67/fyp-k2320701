@@ -9,6 +9,7 @@ import authRoutes from './modules/auth/auth.routes.js';
 import apiRoutes from './modules/sessions/session.routes.js';
 import organiserRoutes from './modules/sessions/organiser.routes.js';
 import clubRoutes from './modules/clubs/club.routes.js';
+import sessionJoinRoutes from './modules/sessions/session-join.routes.js';
 import dns from 'node:dns';
 
 // Force Node.js to use Google DNS
@@ -29,6 +30,7 @@ app.use('/api/users', apiRoutes);
 app.use('/api/session', apiRoutes);
 app.use('/api/organiser', organiserRoutes);
 app.use('/api/clubs', clubRoutes);
+app.use('/api/session-join', sessionJoinRoutes);
 
 const buildPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(buildPath));

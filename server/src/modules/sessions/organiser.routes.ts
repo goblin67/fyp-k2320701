@@ -1,6 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import authMiddleware from '../auth/auth.middleware.js';
 import organiserMiddleware from '../auth/organiser.middleware.js';
 import User from '../users/user.model.js';
@@ -709,6 +709,32 @@ router.post('/sessions', async (req, res) => {
     } catch (error) {
         console.error('ORGANISER SESSION CREATE ERROR:', error);
         res.status(500).json({ error: 'Could not create session' });
+    }
+});
+
+router.post('/sessions/:id/join-qr', async (req, res) => {
+    try {
+        if (!/^[a-f\d]{24}$/i.test(req.params.id)) {
+            res.status(400).json({ error: 'Session id is invalid' });
+            return;
+        }
+        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        if (!session) {
+            res.status(404).json({ error: 'Session not found' });
+            return;
+        }
+        const sessionStatus = session.status ?? (session.isActive ? 'active' : 'completed');
+        if (sessionStatus !== 'scheduled' && sessionStatus !== 'active') {
+            res.status(409).json({ error: 'QR codes are available only for planned or live sessions' });
+            return;
+        }
+        const code = randomBytes(32).toString('hex');
+        session.sessionJoinCodeHash = createHash('sha256').update(code).digest('hex');
+        await session.save();
+        res.json({ code });
+    } catch (error) {
+        console.error('ORGANISER SESSION QR CREATE ERROR:', error);
+        res.status(500).json({ error: 'Could not generate session QR code' });
     }
 });
 

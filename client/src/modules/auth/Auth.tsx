@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 interface AuthFormData {
     username: string;
@@ -31,13 +31,16 @@ const getErrorMessage = (error: unknown): string => error instanceof Error ? err
 
 const Auth = ({ onLoginSuccess }: AuthProps) => {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const nextPath = searchParams.get('next');
+    const sessionJoinPath = nextPath?.startsWith('/join/') ? nextPath : null;
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState<AuthFormData>({ username: '', password: '' });
     const [clubs, setClubs] = useState<PublicClub[]>([]);
     const [error, setError] = useState('');
 
     useEffect(() => {
-        if (isLogin) return;
+        if (isLogin || sessionJoinPath) return;
         let cancelled = false;
         const loadClubs = async () => {
             try {
@@ -53,7 +56,7 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
         return () => {
             cancelled = true;
         };
-    }, [isLogin]);
+    }, [isLogin, sessionJoinPath]);
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -86,7 +89,7 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                 const organiserAccess = data.organiserAccess ?? data.role === 'organiser';
                 localStorage.setItem('organiserAccess', String(organiserAccess));
                 if (onLoginSuccess) onLoginSuccess(data.role, organiserAccess);
-                navigate('/');
+                navigate(sessionJoinPath ?? '/');
             } else {
                 alert(`Account created! Please login.${formData.clubId ? ' Your club membership request will be pending until an organiser approves it.' : ''}`);
                 setIsLogin(true);
@@ -125,7 +128,13 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
             <div className="auth-card">
                 <div className="auth-header">
                     <h1>COURT SYNC</h1>
-                    <p>{isLogin ? 'Sign in to access your player portal and match dashboard.' : 'Create your account to join sessions and track your progress.'}</p>
+                    <p>{sessionJoinPath
+                        ? isLogin
+                            ? 'Sign in to join the session you scanned.'
+                            : 'Create your account, then sign in to join the session.'
+                        : isLogin
+                            ? 'Sign in to access your player portal and match dashboard.'
+                            : 'Create your account to join sessions and track your progress.'}</p>
                 </div>
 
                 <div className="auth-body">
@@ -171,14 +180,16 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
                                     <option value="ISO medal holder">ISO medal holder</option>
                                     <option value="Badminton England rated">Badminton England rated</option>
                                 </select>
-                                <select
-                                    value={formData.clubId || ''}
-                                    onChange={(e) => setFormData({ ...formData, clubId: e.target.value, clubCode: '' })}
-                                >
-                                    <option value="">Join a club later (optional)</option>
-                                    {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
-                                </select>
-                                {formData.clubId && (
+                                {!sessionJoinPath && (
+                                    <select
+                                        value={formData.clubId || ''}
+                                        onChange={(e) => setFormData({ ...formData, clubId: e.target.value, clubCode: '' })}
+                                    >
+                                        <option value="">Join a club later (optional)</option>
+                                        {clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+                                    </select>
+                                )}
+                                {!sessionJoinPath && formData.clubId && (
                                     <input
                                         type="text"
                                         placeholder="Club invite code"

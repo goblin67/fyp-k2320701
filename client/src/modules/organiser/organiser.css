@@ -224,6 +224,25 @@
     user-select: all;
 }
 
+.organiser-session-qr-content {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.organiser-session-qr-content svg {
+    max-width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.organiser-session-qr-content p {
+    max-width: 560px;
+    margin: 0;
+}
+
 .organiser-topbar p,
 .organiser-section-heading p {
     margin: 0;
