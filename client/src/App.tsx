@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 
 import Auth from './modules/auth/Auth';
 import Dashboard from './modules/dashboard/Dashboard';
@@ -19,6 +19,33 @@ const SessionJoinRoute = ({
     return <Navigate to={`/auth?next=${encodeURIComponent(next)}`} replace />;
   }
   return <JoinSession onSessionExpired={onSessionExpired} />;
+};
+
+const HomeRoute = ({
+  isAuthenticated,
+  role,
+  organiserAccess,
+  onLogout
+}: {
+  isAuthenticated: boolean;
+  role: 'player' | 'organiser';
+  organiserAccess: boolean;
+  onLogout: () => void;
+}) => {
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get('joinSession');
+  const code = searchParams.get('code');
+
+  if (sessionId) {
+    const joinPath = `/join/${encodeURIComponent(sessionId)}${code ? `?code=${encodeURIComponent(code)}` : ''}`;
+    return <Navigate to={joinPath} replace />;
+  }
+
+  return isAuthenticated
+    ? role === 'organiser'
+      ? <OrganiserPanel onLogout={onLogout} />
+      : <Dashboard onLogout={onLogout} hasOrganiserAccess={organiserAccess} />
+    : <Navigate to="/auth" replace />;
 };
 
 function App() {
@@ -42,11 +69,14 @@ function App() {
       <Routes>
         <Route
           path="/"
-          element={isAuthenticated
-            ? role === 'organiser'
-              ? <OrganiserPanel onLogout={handleLogout} />
-              : <Dashboard onLogout={handleLogout} hasOrganiserAccess={organiserAccess} />
-            : <Navigate to="/auth" replace />}
+          element={
+            <HomeRoute
+              isAuthenticated={isAuthenticated}
+              role={role}
+              organiserAccess={organiserAccess}
+              onLogout={handleLogout}
+            />
+          }
         />
         <Route
           path="/auth"

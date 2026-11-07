@@ -169,6 +169,13 @@ const getSessionStartTime = (session: SessionData): number | undefined => {
 const getErrorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 
+const getSessionJoinUrl = (sessionId: string, code: string): string => {
+    const joinUrl = new URL('/', window.location.origin);
+    joinUrl.searchParams.set('joinSession', sessionId);
+    joinUrl.searchParams.set('code', code);
+    return joinUrl.toString();
+};
+
 interface ApiRequestOptions {
     method?: string;
     headers?: Record<string, string>;
@@ -684,10 +691,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
     const copySessionJoinLink = async () => {
         if (!sessionQr) return;
-        const joinUrl = new URL(`/join/${sessionQr.sessionId}`, window.location.origin);
-        joinUrl.searchParams.set('code', sessionQr.code);
         try {
-            await navigator.clipboard.writeText(joinUrl.toString());
+            await navigator.clipboard.writeText(getSessionJoinUrl(sessionQr.sessionId, sessionQr.code));
             setNotice('Session join link copied.');
         } catch {
             setError('Could not copy the join link. You can scan the QR code directly instead.');
@@ -1250,9 +1255,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 {sessionQr?.sessionId === selectedSession._id && (
                     <div className="organiser-session-qr-content">
                         <QRCodeSVG value={(() => {
-                            const joinUrl = new URL(`/join/${sessionQr.sessionId}`, window.location.origin);
-                            joinUrl.searchParams.set('code', sessionQr.code);
-                            return joinUrl.toString();
+                            return getSessionJoinUrl(sessionQr.sessionId, sessionQr.code);
                         })()} size={220} level="M" includeMargin />
                         <button className="organiser-button secondary" type="button" onClick={() => void copySessionJoinLink()}>
                             Copy session link
@@ -1763,6 +1766,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                     <p className="organiser-detail-line"><strong>Players:</strong> {selectedSession.players.length} · <strong>Matches:</strong> {selectedSession.matches.length}</p>
                     {statusOf(selectedSession) === 'scheduled' && (
                         <div className="organiser-actions">
+                            <button className="organiser-button secondary" type="button" disabled={busy} onClick={() => void generateSessionQr()}>
+                                Generate session QR
+                            </button>
                             <button className="organiser-button secondary" type="button" onClick={openEditForm}>Edit session</button>
                             <button className="organiser-button" type="button" onClick={beginSessionSetup}>Start session</button>
                             <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void deleteSession()}>
@@ -1902,7 +1908,12 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                             <h2>{selectedSession.title}</h2>
                             <p>{formatSessionSchedule(selectedSession.scheduledAt, selectedSession.endsAt)}</p>
                         </div>
-                        <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
+                        <div className="organiser-actions">
+                            <button className="organiser-button secondary" type="button" disabled={busy} onClick={() => void generateSessionQr()}>
+                                Generate / replace QR
+                            </button>
+                            <button className="organiser-button danger" type="button" disabled={busy} onClick={() => void endSession()}>End session</button>
+                        </div>
                     </div>
                     {sessionJoinQrCard}
                     <section className="organiser-subcard">
