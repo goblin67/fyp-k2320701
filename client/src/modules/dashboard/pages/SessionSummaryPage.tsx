@@ -5,6 +5,15 @@ const getStatus = (session: SessionSummaryPageProps['session']) =>
 
 const SessionSummaryPage = ({ session, selectedSession, username, onBack }: SessionSummaryPageProps) => {
     const player = session.players.find((item) => item.username.toLowerCase() === username.toLowerCase());
+    const activeMatches = session.matches
+        .map((match, index) => ({ match, index }))
+        .filter(({ match }) => match.status === 'ongoing' || match.status === 'proposed')
+        .sort((a, b) => {
+            const aTime = new Date(a.match.createdAt ?? a.match.startTime ?? 0).getTime();
+            const bTime = new Date(b.match.createdAt ?? b.match.startTime ?? 0).getTime();
+            return bTime - aTime || b.index - a.index;
+        });
+    const currentMatch = activeMatches[0]?.match;
     const playingPlayers = new Set(
         session.matches
             .filter((match) => match.status !== 'finished')
@@ -12,17 +21,18 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
             .filter((name): name is string => Boolean(name))
     );
     const waitingPlayers = session.players.filter((item) => !playingPlayers.has(item.username));
-    const activeMatch = session.matches.find((match) =>
+    const playerMatch = session.matches.find((match) =>
         match.status !== 'finished' &&
-        [match.player1, match.player2, match.player3, match.player4].includes(username)
+        [match.player1, match.player2, match.player3, match.player4]
+            .some((name) => name?.toLowerCase() === username.toLowerCase())
     );
     const status = getStatus(session);
     const playerStatus = !player
         ? 'Organiser'
-        : activeMatch?.status === 'ongoing'
-            ? `Playing on court ${activeMatch.court}`
-            : activeMatch?.status === 'proposed'
-                ? `Match proposed on court ${activeMatch.court}`
+        : playerMatch?.status === 'ongoing'
+            ? `Playing on court ${playerMatch.court}`
+            : playerMatch?.status === 'proposed'
+                ? `Match proposed on court ${playerMatch.court}`
                 : status === 'active'
                     ? 'Waiting in queue'
                     : status === 'scheduled'
@@ -31,41 +41,88 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
 
     return (
         <section>
-            <h2 className="text-green">Session Details</h2>
-            <p style={{ color: '#aaa' }}>Session: {session.title || 'CourtSync Session'}</p>
-            <div style={{ background: '#1f1f1f', border: '1px solid #333', borderRadius: '12px', padding: '20px', maxWidth: '700px', margin: '20px auto' }}>
-                <p><strong>Status:</strong> {status.toUpperCase()}</p>
-                {session.scheduledAt && <p><strong>Scheduled:</strong> {new Date(session.scheduledAt).toLocaleString()}</p>}
-                {session.venue && <p><strong>Venue:</strong> {session.venue}</p>}
-                <p><strong>Your status:</strong> {playerStatus}</p>
-                <p><strong>Total players:</strong> {session.players.length}</p>
-                <p><strong>Total matches:</strong> {session.matches.length}</p>
-                <p><strong>Completed matches:</strong> {session.matches.filter((match) => match.status === 'finished').length}</p>
-                <p><strong>Ongoing matches:</strong> {session.matches.filter((match) => match.status === 'ongoing').length}</p>
+            <header className="player-session-header">
+                <div>
+                    <span className="player-session-kicker">SESSION DETAILS</span>
+                    <h2 className="text-green">{session.title || 'CourtSync Session'}</h2>
+                    <p>{session.scheduledAt ? new Date(session.scheduledAt).toLocaleString() : 'Session date unavailable'}{session.venue ? ` · ${session.venue}` : ''}</p>
+                </div>
+                {status === 'active'
+                    ? <span className="player-live-badge"><span className="player-live-dot" aria-hidden="true" />LIVE NOW</span>
+                    : <span className={`player-session-status status-${status}`}>{status.toUpperCase()}</span>}
+            </header>
+            <div className="player-session-overview">
+                <div className="player-session-stat"><span>Your status</span><strong>{playerStatus}</strong></div>
+                <div className="player-session-stat"><span>Players</span><strong>{session.players.length}</strong></div>
+                <div className="player-session-stat"><span>Matches</span><strong>{session.matches.length}</strong></div>
+                <div className="player-session-stat"><span>Completed</span><strong>{session.matches.filter((match) => match.status === 'finished').length}</strong></div>
             </div>
             {status === 'active' && waitingPlayers.length > 0 && (
-                <div style={{ background: '#1f1f1f', border: '1px solid #333', borderRadius: '12px', padding: '20px', maxWidth: '700px', margin: '20px auto' }}>
-                    <h3 style={{ marginTop: 0 }}>Waiting queue</h3>
-                    <p style={{ color: '#ccc' }}>{waitingPlayers.map((item) => item.username).join(' · ')}</p>
+                <div className="player-session-panel">
+                    <div className="player-session-panel-heading"><h3>Waiting queue</h3><span>{waitingPlayers.length} waiting</span></div>
+                    <div className="player-session-queue">
+                        {waitingPlayers.map((item) => (
+                            <span className={`player-session-queue-item${item.username.toLowerCase() === username.toLowerCase() ? ' is-you' : ''}`} key={item.username}>
+                                {item.username}{item.username.toLowerCase() === username.toLowerCase() ? ' · You' : ''}
+                            </span>
+                        ))}
+                    </div>
                 </div>
             )}
-            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-                <h3>Courts and matches</h3>
-                {session.matches.length === 0 && <p style={{ color: '#aaa' }}>No matches have been created yet.</p>}
-                {session.matches.map((match, index) => (
-                    <div key={index} style={{ background: '#252525', padding: '18px', borderRadius: '10px', marginBottom: '12px' }}>
-                        <p style={{ fontWeight: '700' }}>Court {match.court}</p>
-                        <p>
-                            <strong>{match.player1 || 'Vacant'}</strong> & <strong>{match.player2 || 'Vacant'}</strong>
-                            {match.player3 || match.player4 ? ` vs ${match.player3 || 'Vacant'} & ${match.player4 || 'Vacant'}` : ''}
-                        </p>
-                        <p>Status: {match.status.toUpperCase()}</p>
-                        {match.status === 'finished' && <p>Winner: {match.winner}</p>}
-                        <p>Score: {match.score?.team1} - {match.score?.team2}</p>
-                    </div>
-                ))}
+            <div className="player-session-panel">
+                <div className="player-session-panel-heading">
+                    <h3>{status === 'active' ? 'Courts and matches' : 'Session matches'}</h3>
+                    {status === 'active' && <span>Current update</span>}
+                </div>
+                {status === 'active' ? (
+                    currentMatch ? (
+                        <article className="player-current-match">
+                            <header>
+                                <span className="player-current-match-court">COURT {currentMatch.court}</span>
+                                {currentMatch.status === 'ongoing'
+                                    ? <span className="player-live-badge compact"><span className="player-live-dot" aria-hidden="true" />LIVE MATCH</span>
+                                    : <span className="player-session-status status-proposed">UP NEXT</span>}
+                            </header>
+                            <div className="player-current-match-lineup">
+                                <span className={currentMatch.player1?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player1 || 'Vacant'}</span>
+                                <span className="player-current-match-separator">&</span>
+                                <span className={currentMatch.player2?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player2 || 'Vacant'}</span>
+                                {(currentMatch.player3 || currentMatch.player4) && (
+                                    <>
+                                        <span className="player-current-match-versus">VS</span>
+                                        <span className={currentMatch.player3?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player3 || 'Vacant'}</span>
+                                        <span className="player-current-match-separator">&</span>
+                                        <span className={currentMatch.player4?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player4 || 'Vacant'}</span>
+                                    </>
+                                )}
+                            </div>
+                            <p>{currentMatch.status === 'ongoing' ? 'This match is in progress.' : 'This is the latest proposed match.'}</p>
+                        </article>
+                    ) : <p className="player-session-empty">No match is currently in progress or proposed.</p>
+                ) : session.matches.length > 0 ? (
+                    session.matches.map((match) => (
+                        <article className="player-history-match" key={match.matchId}>
+                            <div className="player-session-panel-heading">
+                                <h4>Court {match.court}</h4>
+                                <span>{match.status.toUpperCase()}</span>
+                            </div>
+                            <p>
+                                <strong className={match.player1?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player1 || 'Vacant'}</strong>
+                                {' & '}
+                                <strong className={match.player2?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player2 || 'Vacant'}</strong>
+                                {match.player3 || match.player4 ? (
+                                    <> vs <strong className={match.player3?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player3 || 'Vacant'}</strong>
+                                        {' & '}
+                                        <strong className={match.player4?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player4 || 'Vacant'}</strong>
+                                    </>
+                                ) : null}
+                            </p>
+                            <p className="player-history-match-score">Score: {match.score?.team1} - {match.score?.team2}{match.winner ? ` · Winner: ${match.winner}` : ''}</p>
+                        </article>
+                    ))
+                ) : <p className="player-session-empty">No matches have been created yet.</p>}
             </div>
-            <button className="btn-primary" style={{ marginTop: '20px' }} onClick={onBack}>
+            <button className="btn-primary player-session-back" onClick={onBack}>
                 {selectedSession ? 'Back to My Sessions' : 'Back to Dashboard'}
             </button>
         </section>

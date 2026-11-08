@@ -45,6 +45,7 @@ export interface SessionMatch {
   status: MatchStatus;
   awaitingNextFinish?: boolean;
   manualOverride?: boolean;
+  createdAt?: string | Date;
   startTime?: string | Date;
   finishedAt?: string | Date;
   score: MatchScore;

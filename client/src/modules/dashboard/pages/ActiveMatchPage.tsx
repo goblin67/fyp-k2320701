@@ -2,6 +2,7 @@ import type { ActiveMatchPageProps, PlayerField } from '../dashboard.types';
 
 const ActiveMatchPage = ({
     session,
+    username,
     endingMatchId,
     matchActionError,
     matchTimer,
@@ -23,7 +24,7 @@ const ActiveMatchPage = ({
     onEndMatch
 }: ActiveMatchPageProps) => (
     <section style={{ textAlign: 'center', padding: '40px 0' }}>
-        <h2 className="text-green">Match in Progress</h2>
+        <h2 className="text-green"><span className="player-live-dot" aria-hidden="true" style={{ display: 'inline-block', marginRight: 10, verticalAlign: 'middle' }} />Match in Progress</h2>
         <p style={{ color: '#aaa', marginBottom: '10px' }}>Session: {session.title || 'CourtSync Session'}</p>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
             <button className="btn-primary" style={{ minWidth: '140px' }} onClick={onEndSession} disabled={endingMatchId === 'session'}>
@@ -65,14 +66,14 @@ const ActiveMatchPage = ({
         </div>
         {session.matches.filter((match) => match.status === 'ongoing').length > 0 ? (
             session.matches.filter((match) => match.status === 'ongoing').map((match, index) => (
-                <div key={index} style={{ background: '#252525', padding: '20px', borderRadius: '10px', marginBottom: '20px', textAlign: 'left' }}>
-                    <p><strong>Court {match.court}</strong></p>
+                <div key={index} className="player-current-match" style={{ marginBottom: '20px', textAlign: 'left' }}>
+                    <p><span className="player-live-dot" aria-hidden="true" style={{ display: 'inline-block', marginRight: 8, verticalAlign: 'middle' }} /><strong>Court {match.court} · LIVE</strong></p>
                     <p style={{ margin: '6px 0' }}>
-                        <strong>{match.player1 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong>{match.player2 || 'Vacant'}</strong>
+                        <strong className={match.player1?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player1 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong className={match.player2?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player2 || 'Vacant'}</strong>
                     </p>
                     {match.player3 || match.player4 ? (
                         <p style={{ margin: '6px 0' }}>
-                            <strong>{match.player3 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong>{match.player4 || 'Vacant'}</strong>
+                            <strong className={match.player3?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player3 || 'Vacant'}</strong> <span style={{ color: '#666' }}>vs</span> <strong className={match.player4?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{match.player4 || 'Vacant'}</strong>
                         </p>
                     ) : null}
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '16px' }}>

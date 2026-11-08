@@ -365,6 +365,34 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         }
     };
 
+    useEffect(() => {
+        const sessionId = selectedSession?._id;
+        if (view !== 'session-summary' || !sessionId ||
+            (selectedSession.status !== 'active' && !selectedSession.isActive)) return;
+        let cancelled = false;
+        const refreshSession = async () => {
+            try {
+                const response = await fetch(`${API_URL}/api/session/${encodeURIComponent(sessionId)}`, {
+                    headers: { Authorization: `******'token')}` }
+                });
+                if (!response.ok) throw new Error('Could not refresh the live session.');
+                const latestSession = await readJson<SessionData>(response);
+                if (cancelled) return;
+                setSelectedSession(latestSession);
+                setSessionHistory((current) => current.map((item) =>
+                    item._id === latestSession._id ? latestSession : item
+                ));
+            } catch (error) {
+                if (!cancelled) setErrorMessage(getErrorMessage(error));
+            }
+        };
+        const interval = window.setInterval(() => void refreshSession(), 10000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [API_URL, selectedSession?._id, selectedSession?.isActive, selectedSession?.status, view]);
+
     const handleEndMatch = async (match: SessionMatch) => {
         if (!activeSession) return;
         setMatchActionError('');
@@ -600,6 +628,46 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .match-score { margin: 0; color: #bbb; }
                 .match-win { color: #4CAF50; font-weight: 700; }
                 .match-loss { color: #f44336; font-weight: 700; }
+                .player-session-card { padding: 20px; border: 1px solid rgba(190,215,222,.14); border-radius: 14px; background: linear-gradient(135deg, rgba(24,38,43,.96), rgba(15,23,28,.98)); box-shadow: 0 12px 28px rgba(0,0,0,.18); transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+                .player-session-card:hover { transform: translateY(-2px); border-color: rgba(98,215,223,.36); box-shadow: 0 16px 34px rgba(0,0,0,.28); }
+                .player-session-card.is-live { border-color: rgba(255,73,73,.42); box-shadow: inset 3px 0 #f04444, 0 12px 28px rgba(0,0,0,.2); }
+                .player-live-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid rgba(255,75,75,.28); border-radius: 999px; color: #ff7777; background: rgba(125,29,35,.18); font-size: .74rem; font-weight: 850; letter-spacing: .1em; white-space: nowrap; }
+                .player-live-badge.compact { font-size: .68rem; }
+                .player-live-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #ff4040; box-shadow: 0 0 0 0 rgba(255,64,64,.65); animation: player-live-pulse 1.5s infinite; }
+                @keyframes player-live-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,64,64,.65); } 70% { box-shadow: 0 0 0 7px rgba(255,64,64,0); } 100% { box-shadow: 0 0 0 0 rgba(255,64,64,0); } }
+                .player-session-status { display: inline-flex; padding: 7px 11px; border: 1px solid rgba(190,215,222,.16); border-radius: 999px; color: #b6c4c8; background: rgba(255,255,255,.035); font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+                .player-session-status.status-scheduled { color: #c8f169; border-color: rgba(200,241,105,.24); }
+                .player-session-status.status-proposed { color: #f3cf75; border-color: rgba(243,207,117,.28); }
+                .player-session-card .btn-primary { min-height: 42px; }
+                .player-session-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 0 auto 20px; padding: 24px 26px; border: 1px solid rgba(98,215,223,.2); border-radius: 15px; background: radial-gradient(ellipse at 0% 50%, rgba(98,215,223,.14), transparent 55%), linear-gradient(120deg, #17242a, #10171b); box-shadow: inset 3px 0 #62d7df, 0 16px 34px rgba(0,0,0,.2); }
+                .player-session-header h2 { margin: 6px 0; color: #f1f6f5; }
+                .player-session-header p { margin: 0; color: #aab9bd; }
+                .player-session-kicker { color: #62d7df; font-size: .7rem; font-weight: 800; letter-spacing: .16em; }
+                .player-session-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin: 0 auto 18px; }
+                .player-session-stat { display: grid; gap: 8px; min-height: 82px; padding: 16px; border: 1px solid rgba(190,215,222,.12); border-radius: 12px; background: linear-gradient(145deg, #141f24, #10171b); }
+                .player-session-stat span { color: #93a6ac; font-size: .73rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+                .player-session-stat strong { color: #e8f0ee; }
+                .player-session-panel { max-width: 900px; margin: 0 auto 18px; padding: 20px; border: 1px solid rgba(190,215,222,.13); border-radius: 14px; background: rgba(16,24,29,.9); box-shadow: 0 12px 28px rgba(0,0,0,.18); }
+                .player-session-panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+                .player-session-panel-heading h3, .player-session-panel-heading h4 { margin: 0; color: #eaf1ef; }
+                .player-session-panel-heading > span { color: #91a5aa; font-size: .82rem; }
+                .player-session-queue { display: flex; flex-wrap: wrap; gap: 9px; }
+                .player-session-queue-item { padding: 8px 12px; border: 1px solid rgba(190,215,222,.13); border-radius: 999px; color: #c5d1d2; background: rgba(255,255,255,.035); }
+                .player-session-queue-item.is-you, .player-current-match .is-you, .player-history-match .is-you { color: #d7ff83; font-weight: 850; text-shadow: 0 0 16px rgba(200,241,105,.24); }
+                .player-session-queue-item.is-you { border-color: rgba(200,241,105,.4); background: rgba(200,241,105,.09); }
+                .player-current-match { padding: 20px; border: 1px solid rgba(98,215,223,.24); border-radius: 13px; background: radial-gradient(ellipse at 100% 0%, rgba(98,215,223,.1), transparent 50%), #111b20; }
+                .player-current-match > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+                .player-current-match-court { color: #62d7df; font-size: .76rem; font-weight: 850; letter-spacing: .12em; }
+                .player-current-match-lineup { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; margin: 24px 0 18px; }
+                .player-current-match-lineup > span:not(.player-current-match-separator):not(.player-current-match-versus) { padding: 11px 15px; border: 1px solid rgba(190,215,222,.12); border-radius: 10px; color: #eff5f3; background: rgba(255,255,255,.045); font-size: 1.02rem; font-weight: 750; }
+                .player-current-match-lineup > span.is-you { border-color: rgba(200,241,105,.54); background: rgba(200,241,105,.12); box-shadow: 0 0 18px rgba(200,241,105,.12); }
+                .player-current-match-separator, .player-current-match-versus { color: #91a5aa; font-weight: 800; }
+                .player-current-match-versus { padding: 0 5px; color: #62d7df; font-size: .72rem; letter-spacing: .1em; }
+                .player-current-match > p, .player-session-empty { margin: 0; color: #91a5aa; text-align: center; }
+                .player-history-match { margin-top: 12px; padding: 16px; border: 1px solid rgba(190,215,222,.1); border-radius: 11px; background: rgba(255,255,255,.025); }
+                .player-history-match > p { line-height: 1.7; }
+                .player-history-match-score { color: #aab9bd; }
+                .player-session-back { display: block; margin: 20px auto 0; }
                 .leaderboard-table { width: 100%; border-collapse: collapse; min-width: 760px; margin-top: 18px; }
                 .leaderboard-table th { background: #19272c; color: #c8f169; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.12em; padding: 18px 16px; text-align: left; }
                 .leaderboard-table td { padding: 18px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); color: #e6ecff; vertical-align: middle; }
@@ -635,6 +703,9 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     .user-slot { width: 100%; justify-content: space-between; }
                     .top-tabs { justify-content: flex-start; gap: 8px; }
                     .top-tabs button, .top-tabs .beta-unlock { flex: 1 1 135px; justify-content: center; min-width: 0; padding: 10px 12px; text-align: center; white-space: normal; }
+                    .player-session-header { align-items: flex-start; flex-direction: column; padding: 20px; }
+                    .player-current-match-lineup { gap: 7px; }
+                    .player-current-match-lineup > span:not(.player-current-match-separator):not(.player-current-match-versus) { padding: 9px 10px; font-size: .9rem; }
                     .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
                     .summary-card { padding: 16px; }
                     .summary-card span { font-size: 0.72rem; letter-spacing: 0.08em; }
@@ -774,6 +845,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                             setSelectedSession(null);
                             setView('active-match');
                         }}>
+                            <span className="player-live-dot" aria-hidden="true" style={{ display: 'inline-block', marginRight: 8, verticalAlign: 'middle' }} />
                             Current Match
                         </button>
                     )}
@@ -873,6 +945,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 {view === 'active-match' && activeSession?.isActive && (
                     <ActiveMatchPage
                         session={activeSession}
+                        username={userStats.username}
                         endingMatchId={endingMatchId}
                         matchActionError={matchActionError}
                         matchTimer={formatTimer(matchTimer)}

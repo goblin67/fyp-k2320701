@@ -26,7 +26,7 @@ const SessionHistoryPage = ({ sessions, username, onSelect }: SessionHistoryPage
                 {sessions.map((session) => {
                     const status = getSessionStatus(session);
                     return (
-                        <div key={session._id} style={{ background: '#181818', padding: '18px', borderRadius: '12px', border: '1px solid #333' }}>
+                        <div className={`player-session-card${status === 'active' ? ' is-live' : ''}`} key={session._id}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', flexWrap: 'wrap' }}>
                                 <div>
                                     <h4 style={{ margin: 0 }}>{session.title || 'Untitled session'}</h4>
@@ -38,9 +38,9 @@ const SessionHistoryPage = ({ sessions, username, onSelect }: SessionHistoryPage
                                     </p>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
-                                    <p style={{ margin: 0, color: status === 'active' ? '#c8f169' : '#aaa', fontWeight: 700 }}>
-                                        {status === 'active' ? 'LIVE NOW' : status.toUpperCase()}
-                                    </p>
+                                    {status === 'active'
+                                        ? <span className="player-live-badge"><span className="player-live-dot" aria-hidden="true" />LIVE NOW</span>
+                                        : <span className={`player-session-status status-${status}`}>{status.toUpperCase()}</span>}
                                     <p style={{ margin: '4px 0 0', color: '#aaa' }}>{session.players.length} players</p>
                                 </div>
                             </div>

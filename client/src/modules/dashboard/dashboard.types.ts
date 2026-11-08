@@ -92,6 +92,7 @@ export interface SessionSummaryPageProps {
 
 export interface ActiveMatchPageProps {
     session: SessionData;
+    username: string;
     endingMatchId: string | null;
     matchActionError: string;
     matchTimer: string;
