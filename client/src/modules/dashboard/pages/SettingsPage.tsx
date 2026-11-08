@@ -3,6 +3,9 @@ import ClubMembershipSection from './ClubMembershipSection';
 
 const SettingsPage = ({
     username,
+    bio,
+    setBio,
+    onSaveBio,
     error,
     message,
     busy,
@@ -25,6 +28,21 @@ const SettingsPage = ({
         {error && <div className="error-banner" role="alert">{error}</div>}
         {message && <div className="account-success" role="status">{message}</div>}
         <div className="settings-card account-settings">
+            <form className="account-form" onSubmit={onSaveBio}>
+                <h5>Profile bio</h5>
+                <p>Add a short introduction to your profile. Avatars will be available later.</p>
+                <label htmlFor="player-bio">Bio (100 characters maximum)
+                    <textarea
+                        id="player-bio"
+                        value={bio}
+                        rows={3}
+                        onChange={(event) => setBio([...event.target.value].slice(0, 100).join(''))}
+                        placeholder="Tell the club a little about yourself"
+                    />
+                </label>
+                <small>{[...bio].length}/100 characters</small>
+                <button className="btn-primary" type="submit" disabled={busy}>Save bio</button>
+            </form>
             <div className="settings-intro">
                 <span className="section-kicker">ACCOUNT SECURITY</span>
                 <h4>Protect your account</h4>

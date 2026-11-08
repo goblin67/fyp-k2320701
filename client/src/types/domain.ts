@@ -7,6 +7,8 @@ export interface MatchHistoryEntry {
 
 export interface UserStats {
   username: string;
+  bio: string;
+  loginDays: string[];
   matchHistory: MatchHistoryEntry[];
   completedMatches: number;
   pointsFor: number;

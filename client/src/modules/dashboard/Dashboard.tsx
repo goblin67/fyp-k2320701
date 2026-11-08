@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 import OrganiserPanel from '../organiser/OrganiserPanel';
-import type { DashboardView } from './dashboard.types';
+import type { Achievement, DashboardView } from './dashboard.types';
 import ActiveMatchPage from './pages/ActiveMatchPage';
 import AchievementsPage from './pages/AchievementsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
@@ -14,6 +14,8 @@ import SettingsPage from './pages/SettingsPage';
 
 interface UserProfileResponse {
     username: string;
+    bio?: string;
+    loginDays?: string[];
     matchHistory?: MatchHistoryEntry[];
     completedMatches?: number;
     pointsFor?: number;
@@ -44,7 +46,8 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [view, setView] = useState<DashboardView>('overview');
     const [showOrganiserPanel, setShowOrganiserPanel] = useState(false);
     const [showBetaAccess, setShowBetaAccess] = useState(false);
-    const [userStats, setUserStats] = useState<UserStats>({ username: '', matchHistory: [], completedMatches: 0, pointsFor: 0, pointsAgainst: 0 });
+    const [userStats, setUserStats] = useState<UserStats>({ username: '', bio: '', loginDays: [], matchHistory: [], completedMatches: 0, pointsFor: 0, pointsAgainst: 0 });
+    const [bioDraft, setBioDraft] = useState('');
     const [loading, setLoading] = useState(true);
     const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
     const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -99,10 +102,13 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const totalGames = userStats.matchHistory.length;
     const totalWins = userStats.matchHistory.filter((match) => match.isWin).length;
     const winRate = totalGames > 0 ? Math.round((totalWins / totalGames) * 100) : 0;
+    const orderedMatchHistory = [...userStats.matchHistory].sort(
+        (a, b) => new Date(a.matchDate).getTime() - new Date(b.matchDate).getTime()
+    );
     const currentStreak = (() => {
         let streak = 0;
-        for (let i = userStats.matchHistory.length - 1; i >= 0; i -= 1) {
-            if (userStats.matchHistory[i].isWin) {
+        for (let i = orderedMatchHistory.length - 1; i >= 0; i -= 1) {
+            if (orderedMatchHistory[i].isWin) {
                 streak += 1;
             } else if (streak > 0) {
                 break;
@@ -114,13 +120,114 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         return streak;
     })();
     const streakLabel = currentStreak >= 0 ? `${currentStreak} Wins` : `${-currentStreak} Loss`;
-    const achievements = [
-        { id: 'first-login', title: 'First Login', tagline: 'You made it to the court. Now make it count.', requirement: 'Sign in to your account', progress: 1, target: 1 },
-        { id: 'first-match', title: 'First Match', tagline: 'No warm-up like the real thing.', requirement: 'Complete your first match', progress: userStats.completedMatches, target: 1 },
-        { id: 'first-win', title: 'First Win', tagline: 'The scoreboard knows your name.', requirement: 'Win your first match', progress: totalWins, target: 1 },
-        { id: 'matches-50', title: 'Another One Bites the Dust', tagline: 'Fifty matches. Still standing.', requirement: 'Complete 50 matches', progress: userStats.completedMatches, target: 50 },
-        { id: 'points-1000-for', title: 'Point Collector', tagline: 'The other side has seen enough.', requirement: 'Score 1,000 points', progress: userStats.pointsFor, target: 1000 },
-        { id: 'points-1000-against', title: 'Ouch!', tagline: 'A thousand points conceded. Call it a learning curve.', requirement: 'Concede 1,000 points', progress: userStats.pointsAgainst, target: 1000 }
+    const playerMatchRecords = sessionHistory.flatMap((session) => session.matches.flatMap((match) => {
+        if (match.status !== 'finished') return [];
+        const isDoubles = match.isDoubles || Boolean(match.player3 || match.player4);
+        const sideOne = isDoubles ? [match.player1, match.player2] : [match.player1];
+        const sideTwo = isDoubles ? [match.player3, match.player4] : [match.player2];
+        const playerSide = sideOne.some((name) => name?.toLowerCase() === userStats.username.toLowerCase())
+            ? 1
+            : sideTwo.some((name) => name?.toLowerCase() === userStats.username.toLowerCase()) ? 2 : 0;
+        if (!playerSide) return [];
+        const opponents = playerSide === 1 ? sideTwo : sideOne;
+        const playedAt = match.startTime ?? match.finishedAt ?? session.scheduledAt ?? session.createdAt;
+        return [{
+            date: playedAt ? new Date(playedAt) : null,
+            won: match.winner
+                ? match.winner.split(' & ').some((name) => name.trim().toLowerCase() === userStats.username.toLowerCase())
+                : match.winnerTeam
+                    ? match.winnerTeam === `team${playerSide}`
+                    : userStats.matchHistory.find((entry) =>
+                        entry.opponent.toLowerCase() === opponents.filter(Boolean).join(' & ').toLowerCase() &&
+                        new Date(entry.matchDate).getTime() === new Date(match.finishedAt ?? 0).getTime()
+                    )?.isWin ?? false,
+            pointsFor: playerSide === 1 ? match.score.team1 : match.score.team2,
+            pointsAgainst: playerSide === 1 ? match.score.team2 : match.score.team1,
+            durationMinutes: match.startTime && match.finishedAt
+                ? (new Date(match.finishedAt).getTime() - new Date(match.startTime).getTime()) / 60_000
+                : undefined,
+            opponents: opponents.filter((name): name is string => Boolean(name)).sort().join(' & ')
+        }];
+    })).sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+    const matchDates = userStats.matchHistory
+        .map((match) => new Date(match.matchDate))
+        .filter((date) => Number.isFinite(date.getTime()))
+        .sort((a, b) => a.getTime() - b.getTime());
+    const longestStreak = (won: boolean) => {
+        let best = 0;
+        let current = 0;
+        orderedMatchHistory.forEach((match) => {
+            current = match.isWin === won ? current + 1 : 0;
+            best = Math.max(best, current);
+        });
+        return best;
+    };
+    const sameOpponentStreak = (() => {
+        let best = 0;
+        let current = 0;
+        let previous = '';
+        orderedMatchHistory.forEach((match) => {
+            current = match.opponent === previous ? current + 1 : 1;
+            previous = match.opponent;
+            best = Math.max(best, current);
+        });
+        return best;
+    })();
+    const matchesByDay = new Map<string, number>();
+    matchDates.forEach((date) => {
+        const day = date.toISOString().slice(0, 10);
+        matchesByDay.set(day, (matchesByDay.get(day) ?? 0) + 1);
+    });
+    const playAndLoginDays = [...matchesByDay.keys()]
+        .filter((day) => userStats.loginDays.includes(day))
+        .sort();
+    let consecutivePlayLoginDays = 0;
+    let currentPlayLoginDays = 0;
+    playAndLoginDays.forEach((day, index) => {
+        const previous = index > 0
+            ? new Date(`${playAndLoginDays[index - 1]}T00:00:00Z`).getTime()
+            : Number.NaN;
+        const current = new Date(`${day}T00:00:00Z`).getTime();
+        currentPlayLoginDays = index > 0 && current - previous === 86_400_000
+            ? currentPlayLoginDays + 1
+            : 1;
+        consecutivePlayLoginDays = Math.max(consecutivePlayLoginDays, currentPlayLoginDays);
+    });
+    const daysBetween = (later: Date, earlier: Date) => Math.floor((later.getTime() - earlier.getTime()) / 86_400_000);
+    const longestAbsenceReturn = matchDates.some((date, index) =>
+        index > 0 && daysBetween(date, matchDates[index - 1]!) >= 30
+    );
+    const addAchievement = (
+        id: string, title: string, tagline: string, requirement: string, progress: number, target: number,
+        available = true
+    ) => ({ id, title, tagline, requirement, progress, target, available });
+    const achievements: Achievement[] = [
+        addAchievement('points-100', 'Baby Steps', 'You’re officially dangerous. Well, mostly to your own wrist.', 'Score 100 points', userStats.pointsFor, 100),
+        addAchievement('points-1000', 'Point Factory', 'Look at you go! Your opponent is starting to question their life choices.', 'Score 1,000 points', userStats.pointsFor, 1000),
+        addAchievement('points-5000', 'Feather Shredder', 'At this rate, the local goose population has filed a restraining order against you.', 'Score 5,000 points', userStats.pointsFor, 5000),
+        addAchievement('points-10000', 'Legend of the Court', 'Absolute royalty. Please sign our racket (digital or otherwise).', 'Score 10,000 points', userStats.pointsFor, 10000),
+        addAchievement('points-conceded-100', 'Generous Host', 'Giving points away like they’re party favors. So thoughtful of you!', 'Concede 100 points', userStats.pointsAgainst, 100),
+        addAchievement('points-conceded-1000', 'Professional Retriever', 'You’ve spent more time picking the shuttlecock off the floor than actually playing. Cardio is cardio!', 'Concede 1,000 points', userStats.pointsAgainst, 1000),
+        addAchievement('whitewash', 'Absolute Menace', 'Who hurt you? Leave some dignity for the rest of them.', 'Win a match 21-0', playerMatchRecords.some((match) => match.won && match.pointsFor === 21 && match.pointsAgainst === 0) ? 1 : 0, 1),
+        addAchievement('close-win', 'Heart Attack Central', 'Unclench. You survived, but your blood pressure definitely didn’t.', 'Win by 2 points or fewer with both sides scoring at least 20', playerMatchRecords.some((match) => match.won && match.pointsFor >= 20 && match.pointsAgainst >= 20 && match.pointsFor - match.pointsAgainst <= 2) ? 1 : 0, 1),
+        addAchievement('match-point-loss', 'Snatching Defeat from the Jaws of Victory', 'That victory practically packed its bags, then you slammed the door.', 'Lose after reaching match point (requires point-by-point scoring)', 0, 1, false),
+        addAchievement('dawn-patrol', 'Dawn Patrol', 'The early bird gets the worm... or gets smoked by a guy named Dave who’s been playing since 1994.', 'Play your first match at 6:00 AM or earlier', playerMatchRecords[0]?.date && playerMatchRecords[0].date.getHours() <= 6 ? 1 : 0, 1),
+        addAchievement('nocturnal-racket', 'Nocturnal Racket', 'Nothing says “healthy lifestyle” like aggressively smashing a feathered object at midnight.', 'Play a match past 10:00 PM', playerMatchRecords.some((match) => match.date && match.date.getHours() >= 22) ? 1 : 0, 1),
+        addAchievement('three-matches-day', 'Glutton for Punishment', 'Your legs are writing a formal letter of complaint as we speak.', 'Play 3 matches in a single day', Math.max(0, ...matchesByDay.values()), 3),
+        addAchievement('cone-status', 'Cone Status', 'At least a traffic cone provides a minor obstacle. You just provided scenery.', 'Lose a match while scoring fewer than 5 points', playerMatchRecords.some((match) => !match.won && match.pointsFor < 5) ? 1 : 0, 1),
+        addAchievement('speedrun', 'Speedrun Any%', 'In and out. Faster than a microwave dinner. Was it even fun?', 'Play a match that lasts under 5 minutes', playerMatchRecords.some((match) => match.durationMinutes !== undefined && match.durationMinutes < 5) ? 1 : 0, 1),
+        addAchievement('marathoner', 'Marathoner with a Racket', 'You came for a casual game and accidentally stumbled into a multi-hour psychological thriller.', 'Play a match lasting over 20 minutes', playerMatchRecords.some((match) => match.durationMinutes !== undefined && match.durationMinutes > 20) ? 1 : 0, 1),
+        addAchievement('giant-slayer', 'Giant Slayer', 'David vs. Goliath—with a carbon-fiber frame.', 'Win against a higher-ranked opponent (historical opponent ratings are not tracked)', 0, 1, false),
+        addAchievement('groundhog-day', 'Groundhog Day', 'Blink twice if you guys are actually best friends who refuse to speak to anyone else.', 'Play 5 matches in a row against the exact same opponent', sameOpponentStreak, 5),
+        addAchievement('win-streak-5', 'On a Tear', 'Careful, your ego is starting to leak out of your gym bag.', 'Win 5 matches in a row', longestStreak(true), 5),
+        addAchievement('loss-streak-5', 'Character Building', 'It’s not a losing streak, it’s an extensive research phase into what not to do.', 'Lose 5 matches in a row', longestStreak(false), 5),
+        addAchievement('no-days-off', 'No Off Days', 'Do you ever sit on a couch, or is badminton your entire personality now?', 'Log in and play at least one match 7 days in a row', consecutivePlayLoginDays, 7),
+        addAchievement('lazarus-return', 'The Lazarus Return', 'Look who decided to grace us with their presence. Did you remember which end of the racket to hold?', 'Play your first match after a 30+ day absence', longestAbsenceReturn ? 1 : 0, 1),
+        addAchievement('influencer-mode', 'Influencer Mode', 'Looking sharp. Now let’s see if your drop shot matches.', 'Add a bio to your profile (avatar feature coming later)', userStats.bio.trim() ? 1 : 0, 1),
+        addAchievement('first-login', 'First Login', 'You made it to the court. Now make it count.', 'Sign in to your account', userStats.loginDays.length ? 1 : 0, 1),
+        addAchievement('first-match', 'First Match', 'No warm-up like the real thing.', 'Complete your first match', userStats.completedMatches, 1),
+        addAchievement('first-win', 'First Win', 'The scoreboard knows your name.', 'Win your first match', totalWins, 1),
+        addAchievement('matches-50', 'Another One Bites the Dust', 'Fifty matches. Still standing.', 'Complete 50 matches', userStats.completedMatches, 50)
     ].map((achievement) => ({
         ...achievement,
         unlocked: achievement.progress >= achievement.target,
@@ -202,11 +309,14 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 const userData = await readJson<UserProfileResponse>(userRes);
                 setUserStats({
                     username: userData.username || 'User',
+                    bio: userData.bio ?? '',
+                    loginDays: userData.loginDays ?? [],
                     matchHistory: userData.matchHistory || [],
                     completedMatches: userData.completedMatches ?? userData.matchHistory?.length ?? 0,
                     pointsFor: userData.pointsFor ?? 0,
                     pointsAgainst: userData.pointsAgainst ?? 0
                 });
+                setBioDraft(userData.bio ?? '');
             } else {
                 setErrorMessage('Failed to load profile. Backend might be down.');
             }
@@ -272,6 +382,33 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             setNewPassword('');
             setConfirmNewPassword('');
             setAccountActionMessage(result.message ?? 'Password updated.');
+        } catch (error) {
+            setAccountActionError(getErrorMessage(error));
+        } finally {
+            setAccountActionBusy(false);
+        }
+    };
+
+    const handleSaveBio = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setAccountActionError('');
+        setAccountActionMessage('');
+        setAccountActionBusy(true);
+        try {
+            const response = await fetch(`${API_URL}/api/users/me/bio`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `******'token')}`
+                },
+                body: JSON.stringify({ bio: bioDraft })
+            });
+            const result = await readJson<ErrorResponse & { bio?: string }>(response);
+            if (!response.ok) throw new Error(result.error ?? 'Could not update your bio.');
+            const savedBio = result.bio ?? '';
+            setBioDraft(savedBio);
+            setUserStats((current) => ({ ...current, bio: savedBio }));
+            setAccountActionMessage('Your bio has been updated.');
         } catch (error) {
             setAccountActionError(getErrorMessage(error));
         } finally {
@@ -786,8 +923,9 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .section-kicker { color: #62d7df; font-size: .72rem; font-weight: 800; letter-spacing: .14em; }
                 .account-form { display: grid; gap: 14px; padding: 18px; border: 1px solid rgba(190,215,222,.12); background: #0d1519; border-radius: 8px; }
                 .account-form label { display: grid; gap: 7px; color: #aab9bd; font-size: .88rem; font-weight: 650; }
-                .account-form input { width: 100%; min-height: 42px; padding: 10px 12px; color: #eef4f3; background: #080f12; border: 1px solid rgba(190,215,222,.18); border-radius: 6px; }
-                .account-form input:focus { outline: 2px solid rgba(98,215,223,.65); outline-offset: 1px; border-color: #62d7df; }
+                .account-form input, .account-form textarea { width: 100%; min-height: 42px; padding: 10px 12px; color: #eef4f3; background: #080f12; border: 1px solid rgba(190,215,222,.18); border-radius: 6px; font: inherit; }
+                .account-form textarea { resize: vertical; }
+                .account-form input:focus, .account-form textarea:focus { outline: 2px solid rgba(98,215,223,.65); outline-offset: 1px; border-color: #62d7df; }
                 .account-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
                 .account-export { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px; border: 1px solid rgba(190,215,222,.12); border-radius: 8px; background: #0d1519; }
                 .account-export .btn-primary { flex: 0 0 auto; }
@@ -947,6 +1085,9 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 {view === 'settings' && (
                     <SettingsPage
                         username={userStats.username}
+                        bio={bioDraft}
+                        setBio={setBioDraft}
+                        onSaveBio={handleSaveBio}
                         error={accountActionError}
                         message={accountActionMessage}
                         busy={accountActionBusy}

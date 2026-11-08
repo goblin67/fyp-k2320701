@@ -30,6 +30,7 @@ export interface Achievement {
     target: number;
     unlocked: boolean;
     displayProgress: number;
+    available?: boolean;
 }
 
 export interface OverviewPageProps {
@@ -65,6 +66,9 @@ export interface AchievementsPageProps {
 
 export interface SettingsPageProps {
     username: string;
+    bio: string;
+    setBio: Dispatch<SetStateAction<string>>;
+    onSaveBio: (event: FormEvent<HTMLFormElement>) => void;
     error: string;
     message: string;
     busy: boolean;

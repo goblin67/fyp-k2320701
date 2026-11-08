@@ -56,12 +56,14 @@ router.get('/me', authMiddleware, async (req, res) => {
             return res.status(401).json({ msg: "Not authorized, user data missing" });
         }
 
-        const user = await User.findById(req.user.id).select('username matchHistory');
+        const user = await User.findById(req.user.id).select('username bio loginDays matchHistory');
         if (!user) return res.status(404).json({ msg: "User not found" });
         const lifetimePoints = await getLifetimePoints(user.username);
 
         res.json({
             username: user.username,
+            bio: user.bio ?? '',
+            loginDays: user.loginDays ?? [],
             ...lifetimePoints,
             matchHistory: user.matchHistory.map(({ opponent, teammate, isWin, matchDate }) => ({
                 opponent,
@@ -101,9 +103,26 @@ router.post('/me/password', authMiddleware, async (req, res) => {
     }
 });
 
+router.patch('/me/bio', authMiddleware, async (req, res) => {
+    try {
+        const { bio } = req.body as { bio?: unknown };
+        if (typeof bio !== 'string' || [...bio.trim()].length > 100) {
+            return res.status(400).json({ error: 'Bio must be 100 characters or fewer.' });
+        }
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        user.bio = bio.trim();
+        await user.save();
+        return res.json({ bio: user.bio });
+    } catch (err) {
+        console.error('BIO UPDATE ERROR:', errorMessage(err));
+        return res.status(500).json({ error: 'Could not update your bio.' });
+    }
+});
+
 router.get('/me/export', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('username age level role organiserAccess matchHistory').lean();
+        const user = await User.findById(req.user.id).select('username age level bio role organiserAccess matchHistory').lean();
         if (!user) return res.status(404).json({ error: 'User not found.' });
         const lifetimePoints = await getLifetimePoints(user.username);
         res.setHeader('Content-Disposition', 'attachment; filename="courtsync-account-data.json"');
@@ -111,6 +130,7 @@ router.get('/me/export', authMiddleware, async (req, res) => {
             username: user.username,
             age: user.age ?? null,
             level: user.level ?? null,
+            bio: user.bio ?? '',
             role: user.role,
             organiserAccess: user.organiserAccess,
             matchHistory: user.matchHistory.map(({ opponent, teammate, isWin, matchDate }) => ({
@@ -144,6 +164,8 @@ router.delete('/me', authMiddleware, async (req, res) => {
         user.password = await bcrypt.hash(randomBytes(48).toString('hex'), 10);
         user.age = undefined;
         user.level = undefined;
+        user.bio = '';
+        user.loginDays = [];
         user.role = 'player';
         user.organiserAccess = false;
         user.isDeleted = true;

@@ -24,6 +24,8 @@ export interface UserRecord {
   isDeleted?: boolean;
   age?: number;
   level?: string;
+  bio?: string;
+  loginDays: string[];
   rating: number;
   rd: number;
   vol: number;
@@ -57,6 +59,15 @@ const userSchema = new Schema<UserRecord>({
   isDeleted: { type: Boolean, default: false },
   age: Number,
   level: String,
+  bio: {
+    type: String,
+    default: '',
+    validate: {
+      validator: (value: string) => [...value].length <= 100,
+      message: 'Bio must be 100 characters or fewer.'
+    }
+  },
+  loginDays: { type: [String], default: [] },
   rating: { type: Number, default: 1500 },
   rd: { type: Number, default: 350 },
   vol: { type: Number, default: 0.06 },
