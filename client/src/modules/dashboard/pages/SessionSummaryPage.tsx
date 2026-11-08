@@ -16,19 +16,20 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
         ...session.matches.map((match) => match.court)
     ])].sort((a, b) => a - b);
     const currentMatches = courtNumbers
-        .map((court) => {
+        .flatMap((court) => {
             const matches = session.matches
                 .map((match, index) => ({ match, index }))
                 .filter(({ match }) => match.court === court);
-            const activeMatches = matches.filter(({ match }) =>
-                match.status === 'ongoing' || match.status === 'proposed'
-            );
-            const candidates = activeMatches.length ? activeMatches : matches;
-            return candidates.sort((a, b) =>
+            const ongoing = matches.filter(({ match }) => match.status === 'ongoing');
+            if (ongoing.length) return ongoing.map(({ match }) => match);
+
+            const proposed = matches.filter(({ match }) => match.status === 'proposed');
+            const candidates = proposed.length ? proposed : matches;
+            const latest = candidates.sort((a, b) =>
                 getMatchTime(b.match) - getMatchTime(a.match) || b.index - a.index
             )[0]?.match;
+            return latest ? [latest] : [];
         })
-        .filter((match): match is NonNullable<typeof match> => Boolean(match))
         .sort((a, b) => {
             const aHasPlayer = [a.player1, a.player2, a.player3, a.player4]
                 .some((name) => name?.toLowerCase() === userName);
@@ -36,6 +37,8 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
                 .some((name) => name?.toLowerCase() === userName);
             return Number(bHasPlayer) - Number(aHasPlayer) || a.court - b.court;
         });
+    const playerName = (name?: string) =>
+        name?.toLowerCase() === userName ? `${name} (you)` : name || 'Vacant';
     const playingPlayers = new Set(
         session.matches
             .filter((match) => match.status !== 'finished')
@@ -109,15 +112,15 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
                                         : <span className="player-session-status">LATEST MATCH</span>}
                             </header>
                             <div className="player-current-match-lineup">
-                                <span className={currentMatch.player1?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player1 || 'Vacant'}</span>
+                                <span className={currentMatch.player1?.toLowerCase() === userName ? 'is-you' : ''}>{playerName(currentMatch.player1)}</span>
                                 <span className="player-current-match-separator">&</span>
-                                <span className={currentMatch.player2?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player2 || 'Vacant'}</span>
+                                <span className={currentMatch.player2?.toLowerCase() === userName ? 'is-you' : ''}>{playerName(currentMatch.player2)}</span>
                                 {(currentMatch.player3 || currentMatch.player4) && (
                                     <>
                                         <span className="player-current-match-versus">VS</span>
-                                        <span className={currentMatch.player3?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player3 || 'Vacant'}</span>
+                                        <span className={currentMatch.player3?.toLowerCase() === userName ? 'is-you' : ''}>{playerName(currentMatch.player3)}</span>
                                         <span className="player-current-match-separator">&</span>
-                                        <span className={currentMatch.player4?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player4 || 'Vacant'}</span>
+                                        <span className={currentMatch.player4?.toLowerCase() === userName ? 'is-you' : ''}>{playerName(currentMatch.player4)}</span>
                                     </>
                                 )}
                             </div>
