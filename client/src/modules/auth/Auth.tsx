@@ -34,7 +34,7 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
     const [searchParams] = useSearchParams();
     const nextPath = searchParams.get('next');
     const sessionJoinPath = nextPath?.startsWith('/join/') ? nextPath : null;
-    const [isLogin, setIsLogin] = useState(true);
+    const [isLogin, setIsLogin] = useState(() => searchParams.get('mode') !== 'register');
     const [formData, setFormData] = useState<AuthFormData>({ username: '', password: '' });
     const [clubs, setClubs] = useState<PublicClub[]>([]);
     const [error, setError] = useState(() =>

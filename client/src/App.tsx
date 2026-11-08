@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 
 import Auth from './modules/auth/Auth';
 import Dashboard from './modules/dashboard/Dashboard';
@@ -7,17 +7,10 @@ import OrganiserPanel from './modules/organiser/OrganiserPanel';
 import JoinSession from './modules/sessions/JoinSession';
 
 const SessionJoinRoute = ({
-  isAuthenticated,
   onSessionExpired
 }: {
-  isAuthenticated: boolean;
   onSessionExpired: () => void;
 }) => {
-  const location = useLocation();
-  if (!isAuthenticated) {
-    const next = `${location.pathname}${location.search}`;
-    return <Navigate to={`/auth?next=${encodeURIComponent(next)}`} replace />;
-  }
   return <JoinSession onSessionExpired={onSessionExpired} />;
 };
 
@@ -109,7 +102,7 @@ function App() {
         />
         <Route
           path="/join/:sessionId"
-          element={<SessionJoinRoute isAuthenticated={isAuthenticated} onSessionExpired={handleLogout} />}
+          element={<SessionJoinRoute onSessionExpired={handleLogout} />}
         />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
