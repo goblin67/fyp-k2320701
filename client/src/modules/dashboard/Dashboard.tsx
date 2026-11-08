@@ -653,8 +653,8 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 .player-session-panel-heading > span { color: #91a5aa; font-size: .82rem; }
                 .player-session-queue { display: flex; flex-wrap: wrap; gap: 9px; }
                 .player-session-queue-item { padding: 8px 12px; border: 1px solid rgba(190,215,222,.13); border-radius: 999px; color: #c5d1d2; background: rgba(255,255,255,.035); }
-                .player-session-queue-item.is-you, .player-current-match .is-you, .player-history-match .is-you { color: #d7ff83; font-weight: 850; text-shadow: 0 0 16px rgba(200,241,105,.24); }
-                .player-session-queue-item.is-you { border-color: rgba(200,241,105,.4); background: rgba(200,241,105,.09); }
+                .player-session-queue-item.is-you, .player-current-match .is-you, .player-history-match .is-you { color: #e5ff83; font-size: 1.12em; font-weight: 900; text-shadow: 0 0 12px rgba(200,241,105,.32); }
+                .player-session-queue-item.is-you { border-color: rgba(200,241,105,.72); background: rgba(200,241,105,.15); }
                 .player-current-match { padding: 20px; border: 1px solid rgba(98,215,223,.24); border-radius: 13px; background: radial-gradient(ellipse at 100% 0%, rgba(98,215,223,.1), transparent 50%), #111b20; }
                 .player-current-match > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
                 .player-current-match-court { color: #62d7df; font-size: .76rem; font-weight: 850; letter-spacing: .12em; }
