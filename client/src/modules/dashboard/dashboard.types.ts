@@ -55,6 +55,7 @@ export interface MatchHistoryPageProps {
 
 export interface SessionHistoryPageProps {
     sessions: SessionData[];
+    username: string;
     onSelect: (sessionId: string) => void;
 }
 
@@ -85,6 +86,7 @@ export interface SettingsPageProps {
 export interface SessionSummaryPageProps {
     session: SessionData;
     selectedSession: SessionData | null;
+    username: string;
     onBack: () => void;
 }
 

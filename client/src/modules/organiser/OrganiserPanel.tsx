@@ -547,6 +547,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const [winnerEdits, setWinnerEdits] = useState<Record<string, 'team1' | 'team2'>>({});
     const [clockNow, setClockNow] = useState(0);
     const [liveSessionStartedAt, setLiveSessionStartedAt] = useState<Record<string, number>>({});
+    const selectedSessionId = selectedSession?._id;
     const selectedClub = clubs.find((club) => club.id === selectedClubId);
     const fixedClubFormat = selectedClub?.allowedFormats.length === 1 ? selectedClub.allowedFormats[0] : undefined;
 
@@ -610,6 +611,39 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
         const interval = window.setInterval(() => setClockNow(Date.now()), 1000);
         return () => window.clearInterval(interval);
     }, [screen]);
+
+    useEffect(() => {
+        if (screen !== 'live' || !selectedClubId || !selectedSessionId) return;
+        let cancelled = false;
+        let refreshing = false;
+        const refreshLiveSession = async () => {
+            if (refreshing) return;
+            refreshing = true;
+            try {
+                const latestSessions = await apiRequest<SessionData[]>(
+                    `/sessions?clubId=${encodeURIComponent(selectedClubId)}`
+                );
+                const latestSession = latestSessions.find((session) => session._id === selectedSessionId);
+                if (!latestSession) throw new Error('This live session is no longer available.');
+                if (cancelled) return;
+                setSelectedSession(latestSession);
+                setSessions((current) => current.map((session) =>
+                    session._id === latestSession._id ? latestSession : session
+                ));
+            } catch (requestError) {
+                if (!cancelled) setError(getErrorMessage(requestError));
+            } finally {
+                refreshing = false;
+            }
+        };
+
+        void refreshLiveSession();
+        const interval = window.setInterval(() => void refreshLiveSession(), 5000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [screen, selectedClubId, selectedSessionId]);
 
     const upsertSession = (updated: SessionData) => {
         setSelectedSession(updated);

@@ -178,9 +178,14 @@ router.get('/active', authMiddleware, async (req, res) => {
 
 router.get('/history', authMiddleware, async (req, res) => {
     try {
-        const sessions = await Session.find({ adminId: req.user.id })
+        const sessions = await Session.find({
+            $or: [
+                { adminId: req.user.id },
+                { 'players.username': req.user.username }
+            ]
+        })
             .sort({ createdAt: -1 })
-            .limit(50);
+            .limit(100);
         res.json(sessions);
     } catch (err) {
         console.error("SESSION HISTORY Error:", errorMessage(err));
@@ -251,7 +256,13 @@ router.get('/leaderboard', authMiddleware, async (req, res) => {
 
 router.get('/:id', authMiddleware, async (req, res) => {
     try {
-        const session = await Session.findOne({ _id: req.params.id, adminId: req.user.id });
+        const session = await Session.findOne({
+            _id: req.params.id,
+            $or: [
+                { adminId: req.user.id },
+                { 'players.username': req.user.username }
+            ]
+        });
         if (!session) {
             return res.status(404).json({ error: 'Session not found' });
         }

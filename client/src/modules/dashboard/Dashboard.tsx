@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 import OrganiserPanel from '../organiser/OrganiserPanel';
@@ -323,7 +323,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         }
     };
 
-    const fetchSessionHistory = async () => {
+    const fetchSessionHistory = useCallback(async () => {
         try {
             const res = await fetch(`${API_URL}/api/session/history`, {
                 headers: {
@@ -333,11 +333,20 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             if (res.ok) {
                 const data = await readJson<SessionData[]>(res);
                 setSessionHistory(data || []);
+            } else {
+                throw new Error('Could not load your sessions.');
             }
         } catch (err) {
             console.error('Session history fetch error:', err);
+            setErrorMessage(getErrorMessage(err));
         }
-    };
+    }, [API_URL]);
+
+    useEffect(() => {
+        if (view !== 'session-history') return;
+        const interval = window.setInterval(() => void fetchSessionHistory(), 15000);
+        return () => window.clearInterval(interval);
+    }, [fetchSessionHistory, view]);
 
     const handleSessionSelect = async (sessionId: string) => {
         try {
@@ -748,9 +757,9 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     }}>Achievements</button>
                     <button className={view === 'session-history' ? 'active' : ''} onClick={() => {
                         setSelectedSession(null);
-                        fetchSessionHistory();
+                        void fetchSessionHistory();
                         setView('session-history');
-                    }}>Session History</button>
+                    }}>My Sessions</button>
                     {hasOrganiserAccess ? (
                         <button className="beta-unlock" type="button" onClick={() => setShowOrganiserPanel(true)}>Organiser panel</button>
                     ) : (
@@ -821,7 +830,9 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
 
                 {view === 'match-history' && <MatchHistoryPage matchHistory={userStats.matchHistory} />}
 
-                {view === 'session-history' && <SessionHistoryPage sessions={sessionHistory} onSelect={handleSessionSelect} />}
+                {view === 'session-history' && (
+                    <SessionHistoryPage sessions={sessionHistory} username={userStats.username} onSelect={handleSessionSelect} />
+                )}
 
                 {view === 'achievements' && <AchievementsPage achievements={achievements} />}
 
@@ -851,6 +862,7 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                     <SessionSummaryPage
                         session={sessionToShow}
                         selectedSession={selectedSession}
+                        username={userStats.username}
                         onBack={() => {
                             setSelectedSession(null);
                             setView(selectedSession ? 'session-history' : 'overview');

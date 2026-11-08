@@ -21,6 +21,22 @@ const SessionJoinRoute = ({
   return <JoinSession onSessionExpired={onSessionExpired} />;
 };
 
+const AuthRoute = ({
+  isAuthenticated,
+  onLoginSuccess
+}: {
+  isAuthenticated: boolean;
+  onLoginSuccess: (role: 'player' | 'organiser', organiserAccess: boolean) => void;
+}) => {
+  const [searchParams] = useSearchParams();
+  const nextPath = searchParams.get('next');
+  const safeNextPath = nextPath?.startsWith('/join/') ? nextPath : '/';
+
+  return isAuthenticated
+    ? <Navigate to={safeNextPath} replace />
+    : <Auth onLoginSuccess={onLoginSuccess} />;
+};
+
 const HomeRoute = ({
   isAuthenticated,
   role,
@@ -80,13 +96,16 @@ function App() {
         />
         <Route
           path="/auth"
-          element={isAuthenticated
-            ? <Navigate to="/" replace />
-            : <Auth onLoginSuccess={(nextRole, nextOrganiserAccess) => {
-              setRole(nextRole);
-              setOrganiserAccess(nextOrganiserAccess);
-              setIsAuthenticated(true);
-            }} />}
+          element={
+            <AuthRoute
+              isAuthenticated={isAuthenticated}
+              onLoginSuccess={(nextRole, nextOrganiserAccess) => {
+                setRole(nextRole);
+                setOrganiserAccess(nextOrganiserAccess);
+                setIsAuthenticated(true);
+              }}
+            />
+          }
         />
         <Route
           path="/join/:sessionId"
