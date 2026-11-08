@@ -328,11 +328,16 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             const res = await fetch(`${API_URL}/api/session/history`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
+                },
+                cache: 'no-store'
             });
             if (res.ok) {
                 const data = await readJson<SessionData[]>(res);
-                setSessionHistory(data || []);
+                const sessions = data || [];
+                setSessionHistory(sessions);
+                setSelectedSession((current) => current
+                    ? sessions.find((session) => session._id === current._id) ?? current
+                    : null);
             } else {
                 throw new Error('Could not load your sessions.');
             }
@@ -350,18 +355,21 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
 
     const handleSessionSelect = async (sessionId: string) => {
         try {
-            const res = await fetch(`${API_URL}/api/session/${sessionId}`, {
+            const res = await fetch(`${API_URL}/api/session/history`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
+                },
+                cache: 'no-store'
             });
-            if (res.ok) {
-                const data = await readJson<SessionData>(res);
-                setSelectedSession(data);
-                setView('session-summary');
-            }
+            if (!res.ok) throw new Error('Could not load session details.');
+            const sessions = await readJson<SessionData[]>(res);
+            const session = sessions.find((item) => item._id === sessionId);
+            if (!session) throw new Error('This session is no longer available.');
+            setSelectedSession(session);
+            setView('session-summary');
         } catch (err) {
             console.error('Failed to load session details:', err);
+            setErrorMessage(getErrorMessage(err));
         }
     };
 
@@ -376,12 +384,14 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
             if (refreshing) return;
             refreshing = true;
             try {
-                const response = await fetch(`${API_URL}/api/session/${encodeURIComponent(sessionId)}`, {
+                const response = await fetch(`${API_URL}/api/session/history`, {
                     headers: { Authorization: `******'token')}` },
                     cache: 'no-store'
                 });
                 if (!response.ok) throw new Error('Could not refresh the live session.');
-                const latestSession = await readJson<SessionData>(response);
+                const sessions = await readJson<SessionData[]>(response);
+                const latestSession = sessions.find((session) => session._id === sessionId);
+                if (!latestSession) throw new Error('This live session is no longer available.');
                 if (cancelled) return;
                 if (selectedSession) {
                     setSelectedSession(latestSession);
