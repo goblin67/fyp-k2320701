@@ -366,32 +366,44 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     };
 
     useEffect(() => {
-        const sessionId = selectedSession?._id;
+        const viewedSession = selectedSession ?? activeSession;
+        const sessionId = viewedSession?._id;
         if (view !== 'session-summary' || !sessionId ||
-            (selectedSession.status !== 'active' && !selectedSession.isActive)) return;
+            (viewedSession.status !== 'active' && !viewedSession.isActive)) return;
         let cancelled = false;
+        let refreshing = false;
         const refreshSession = async () => {
+            if (refreshing) return;
+            refreshing = true;
             try {
                 const response = await fetch(`${API_URL}/api/session/${encodeURIComponent(sessionId)}`, {
-                    headers: { Authorization: `******'token')}` }
+                    headers: { Authorization: `******'token')}` },
+                    cache: 'no-store'
                 });
                 if (!response.ok) throw new Error('Could not refresh the live session.');
                 const latestSession = await readJson<SessionData>(response);
                 if (cancelled) return;
-                setSelectedSession(latestSession);
+                if (selectedSession) {
+                    setSelectedSession(latestSession);
+                } else {
+                    setActiveSession(latestSession);
+                }
                 setSessionHistory((current) => current.map((item) =>
                     item._id === latestSession._id ? latestSession : item
                 ));
             } catch (error) {
                 if (!cancelled) setErrorMessage(getErrorMessage(error));
+            } finally {
+                refreshing = false;
             }
         };
-        const interval = window.setInterval(() => void refreshSession(), 10000);
+        void refreshSession();
+        const interval = window.setInterval(() => void refreshSession(), 5000);
         return () => {
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [API_URL, selectedSession?._id, selectedSession?.isActive, selectedSession?.status, view]);
+    }, [API_URL, activeSession?._id, activeSession?.isActive, activeSession?.status, selectedSession?._id, selectedSession?.isActive, selectedSession?.status, view]);
 
     const handleEndMatch = async (match: SessionMatch) => {
         if (!activeSession) return;
