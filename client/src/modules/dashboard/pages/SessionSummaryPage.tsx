@@ -3,17 +3,39 @@ import type { SessionSummaryPageProps } from '../dashboard.types';
 const getStatus = (session: SessionSummaryPageProps['session']) =>
     session.status ?? (session.isActive ? 'active' : 'completed');
 
+const getMatchTime = (match: SessionSummaryPageProps['session']['matches'][number]) => {
+    const time = match.createdAt ?? match.startTime ?? match.finishedAt;
+    return time ? new Date(time).getTime() : 0;
+};
+
 const SessionSummaryPage = ({ session, selectedSession, username, onBack }: SessionSummaryPageProps) => {
     const player = session.players.find((item) => item.username.toLowerCase() === username.toLowerCase());
-    const activeMatches = session.matches
-        .map((match, index) => ({ match, index }))
-        .filter(({ match }) => match.status === 'ongoing' || match.status === 'proposed')
+    const userName = username.toLowerCase();
+    const courtNumbers = [...new Set([
+        ...Array.from({ length: session.numCourts }, (_, index) => index + 1),
+        ...session.matches.map((match) => match.court)
+    ])].sort((a, b) => a - b);
+    const currentMatches = courtNumbers
+        .map((court) => {
+            const matches = session.matches
+                .map((match, index) => ({ match, index }))
+                .filter(({ match }) => match.court === court);
+            const activeMatches = matches.filter(({ match }) =>
+                match.status === 'ongoing' || match.status === 'proposed'
+            );
+            const candidates = activeMatches.length ? activeMatches : matches;
+            return candidates.sort((a, b) =>
+                getMatchTime(b.match) - getMatchTime(a.match) || b.index - a.index
+            )[0]?.match;
+        })
+        .filter((match): match is NonNullable<typeof match> => Boolean(match))
         .sort((a, b) => {
-            const aTime = new Date(a.match.createdAt ?? a.match.startTime ?? 0).getTime();
-            const bTime = new Date(b.match.createdAt ?? b.match.startTime ?? 0).getTime();
-            return bTime - aTime || b.index - a.index;
+            const aHasPlayer = [a.player1, a.player2, a.player3, a.player4]
+                .some((name) => name?.toLowerCase() === userName);
+            const bHasPlayer = [b.player1, b.player2, b.player3, b.player4]
+                .some((name) => name?.toLowerCase() === userName);
+            return Number(bHasPlayer) - Number(aHasPlayer) || a.court - b.court;
         });
-    const currentMatch = activeMatches[0]?.match;
     const playingPlayers = new Set(
         session.matches
             .filter((match) => match.status !== 'finished')
@@ -75,13 +97,16 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
                     {status === 'active' && <span>Current update</span>}
                 </div>
                 {status === 'active' ? (
-                    currentMatch ? (
-                        <article className="player-current-match">
+                    currentMatches.length ? (
+                        currentMatches.map((currentMatch) => (
+                        <article className="player-current-match" key={currentMatch.matchId}>
                             <header>
                                 <span className="player-current-match-court">COURT {currentMatch.court}</span>
                                 {currentMatch.status === 'ongoing'
                                     ? <span className="player-live-badge compact"><span className="player-live-dot" aria-hidden="true" />LIVE MATCH</span>
-                                    : <span className="player-session-status status-proposed">UP NEXT</span>}
+                                    : currentMatch.status === 'proposed'
+                                        ? <span className="player-session-status status-proposed">UP NEXT</span>
+                                        : <span className="player-session-status">LATEST MATCH</span>}
                             </header>
                             <div className="player-current-match-lineup">
                                 <span className={currentMatch.player1?.toLowerCase() === username.toLowerCase() ? 'is-you' : ''}>{currentMatch.player1 || 'Vacant'}</span>
@@ -96,8 +121,14 @@ const SessionSummaryPage = ({ session, selectedSession, username, onBack }: Sess
                                     </>
                                 )}
                             </div>
-                            <p>{currentMatch.status === 'ongoing' ? 'This match is in progress.' : 'This is the latest proposed match.'}</p>
+                            <p>{currentMatch.status === 'ongoing'
+                                ? 'This match is in progress.'
+                                : currentMatch.status === 'proposed'
+                                    ? 'This is the latest proposed match.'
+                                    : 'No match is currently active on this court. Showing its latest match.'}
+                            </p>
                         </article>
+                        ))
                     ) : <p className="player-session-empty">No match is currently in progress or proposed.</p>
                 ) : session.matches.length > 0 ? (
                     session.matches.map((match) => (
