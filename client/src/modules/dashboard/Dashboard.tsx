@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { LeaderboardRow, MatchHistoryEntry, MatchScore, PlayerField, SessionData, SessionMatch, UserStats, WinnerTeam } from '../../types/domain';
 import OrganiserPanel from '../organiser/OrganiserPanel';
@@ -70,8 +70,18 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
     const [matchActionError, setMatchActionError] = useState('');
 
     const navigate = useNavigate();
+    const authRedirecting = useRef(false);
 
     const API_URL = import.meta.env.VITE_BACKEND_URL;
+
+    const redirectToLogin = useCallback(() => {
+        if (authRedirecting.current) return;
+        authRedirecting.current = true;
+        const sessionId = selectedSession?._id ?? activeSession?._id;
+        if (sessionId) sessionStorage.setItem('resumeSessionId', sessionId);
+        onLogout();
+        navigate('/auth?sessionExpired=1', { replace: true });
+    }, [activeSession?._id, navigate, onLogout, selectedSession?._id]);
 
     const waitingQueue = activeSession?.players
         .filter((player) => !activeSession.matches.some((m) => m.status === 'ongoing' && [m.player1, m.player2, m.player3, m.player4].includes(player.username)))
@@ -216,7 +226,16 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 }
             }
 
-            await fetchSessionHistory();
+            const sessions = await fetchSessionHistory();
+            const resumeSessionId = sessionStorage.getItem('resumeSessionId');
+            if (resumeSessionId) {
+                const resumeSession = sessions.find((session) => session._id === resumeSessionId);
+                sessionStorage.removeItem('resumeSessionId');
+                if (resumeSession) {
+                    setSelectedSession(resumeSession);
+                    setView('session-summary');
+                }
+            }
             await fetchLeaderboard();
         } catch (err) {
             console.error("Dashboard Fetch Error:", err);
@@ -323,14 +342,22 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         }
     };
 
-    const fetchSessionHistory = useCallback(async () => {
+    const fetchSessionHistory = useCallback(async (): Promise<SessionData[]> => {
         try {
+            if (!localStorage.getItem('token')) {
+                redirectToLogin();
+                return [];
+            }
             const res = await fetch(`${API_URL}/api/session/history`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
                 },
                 cache: 'no-store'
             });
+            if (res.status === 401) {
+                redirectToLogin();
+                return [];
+            }
             if (res.ok) {
                 const data = await readJson<SessionData[]>(res);
                 const sessions = data || [];
@@ -338,14 +365,19 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 setSelectedSession((current) => current
                     ? sessions.find((session) => session._id === current._id) ?? current
                     : null);
+                setActiveSession((current) => current
+                    ? sessions.find((session) => session._id === current._id) ?? current
+                    : null);
+                return sessions;
             } else {
                 throw new Error('Could not load your sessions.');
             }
         } catch (err) {
             console.error('Session history fetch error:', err);
             setErrorMessage(getErrorMessage(err));
+            return [];
         }
-    }, [API_URL]);
+    }, [API_URL, redirectToLogin]);
 
     useEffect(() => {
         if (view !== 'session-history') return;
@@ -361,6 +393,10 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
                 },
                 cache: 'no-store'
             });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             if (!res.ok) throw new Error('Could not load session details.');
             const sessions = await readJson<SessionData[]>(res);
             const session = sessions.find((item) => item._id === sessionId);
@@ -378,42 +414,20 @@ const Dashboard = ({ onLogout, hasOrganiserAccess }: DashboardProps) => {
         const sessionId = viewedSession?._id;
         if (view !== 'session-summary' || !sessionId ||
             (viewedSession.status !== 'active' && !viewedSession.isActive)) return;
-        let cancelled = false;
         let refreshing = false;
         const refreshSession = async () => {
             if (refreshing) return;
             refreshing = true;
             try {
-                const response = await fetch(`${API_URL}/api/session/history`, {
-                    headers: { Authorization: `******'token')}` },
-                    cache: 'no-store'
-                });
-                if (!response.ok) throw new Error('Could not refresh the live session.');
-                const sessions = await readJson<SessionData[]>(response);
-                const latestSession = sessions.find((session) => session._id === sessionId);
-                if (!latestSession) throw new Error('This live session is no longer available.');
-                if (cancelled) return;
-                if (selectedSession) {
-                    setSelectedSession(latestSession);
-                } else {
-                    setActiveSession(latestSession);
-                }
-                setSessionHistory((current) => current.map((item) =>
-                    item._id === latestSession._id ? latestSession : item
-                ));
-            } catch (error) {
-                if (!cancelled) setErrorMessage(getErrorMessage(error));
+                await fetchSessionHistory();
             } finally {
                 refreshing = false;
             }
         };
         void refreshSession();
         const interval = window.setInterval(() => void refreshSession(), 5000);
-        return () => {
-            cancelled = true;
-            window.clearInterval(interval);
-        };
-    }, [API_URL, activeSession?._id, activeSession?.isActive, activeSession?.status, selectedSession?._id, selectedSession?.isActive, selectedSession?.status, view]);
+        return () => window.clearInterval(interval);
+    }, [activeSession?._id, activeSession?.isActive, activeSession?.status, fetchSessionHistory, selectedSession?._id, selectedSession?.isActive, selectedSession?.status, view]);
 
     const handleEndMatch = async (match: SessionMatch) => {
         if (!activeSession) return;

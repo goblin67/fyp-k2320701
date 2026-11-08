@@ -37,7 +37,11 @@ const Auth = ({ onLoginSuccess }: AuthProps) => {
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState<AuthFormData>({ username: '', password: '' });
     const [clubs, setClubs] = useState<PublicClub[]>([]);
-    const [error, setError] = useState('');
+    const [error, setError] = useState(() =>
+        searchParams.get('sessionExpired') === '1'
+            ? 'Your login needs to be renewed. Please sign in again to continue.'
+            : ''
+    );
 
     useEffect(() => {
         if (isLogin || sessionJoinPath) return;
