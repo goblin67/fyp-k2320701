@@ -77,6 +77,7 @@ interface PlayerSelection {
     preferredFormat: Format;
     age?: number;
     level?: string;
+    registered?: boolean;
 }
 
 interface OrganiserPanelProps {
@@ -613,7 +614,8 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     }, [screen]);
 
     useEffect(() => {
-        if (screen !== 'live' || !selectedClubId || !selectedSessionId) return;
+        if (!['sessions', 'details', 'setup', 'live'].includes(screen) || !selectedClubId ||
+            (screen !== 'sessions' && !selectedSessionId)) return;
         let cancelled = false;
         let refreshing = false;
         const refreshLiveSession = async () => {
@@ -623,13 +625,31 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                 const latestSessions = await apiRequest<SessionData[]>(
                     `/sessions?clubId=${encodeURIComponent(selectedClubId)}`
                 );
-                const latestSession = latestSessions.find((session) => session._id === selectedSessionId);
-                if (!latestSession) throw new Error('This live session is no longer available.');
                 if (cancelled) return;
+                setSessions(latestSessions);
+                if (!selectedSessionId) return;
+                const latestSession = latestSessions.find((session) => session._id === selectedSessionId);
+                if (!latestSession) throw new Error('This session is no longer available.');
                 setSelectedSession(latestSession);
-                setSessions((current) => current.map((session) =>
-                    session._id === latestSession._id ? latestSession : session
-                ));
+                if (screen === 'setup') {
+                    setSelectedPlayers((current) => {
+                        const playersByName = new Map(current.map((player) => [player.username.toLowerCase(), player]));
+                        latestSession.players.forEach((player) => {
+                            const key = player.username.toLowerCase();
+                            if (!playersByName.has(key)) {
+                                playersByName.set(key, {
+                                    username: player.username,
+                                    kind: player.isGuest ? 'guest' : 'account',
+                                    preferredFormat: player.preferredFormat ?? selectedClub?.defaultFormat ?? 'singles',
+                                    age: player.age,
+                                    level: player.level,
+                                    registered: true
+                                });
+                            }
+                        });
+                        return [...playersByName.values()];
+                    });
+                }
             } catch (requestError) {
                 if (!cancelled) setError(getErrorMessage(requestError));
             } finally {
@@ -643,7 +663,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [screen, selectedClubId, selectedSessionId]);
+    }, [screen, selectedClub?.defaultFormat, selectedClubId, selectedSessionId]);
 
     const upsertSession = (updated: SessionData) => {
         setSelectedSession(updated);
@@ -942,7 +962,14 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const beginSessionSetup = () => {
         if (!selectedSession) return;
         const defaultFormat = selectedClub?.defaultFormat ?? 'singles';
-        setSelectedPlayers([]);
+        setSelectedPlayers(selectedSession.players.map((player) => ({
+            username: player.username,
+            kind: player.isGuest ? 'guest' : 'account',
+            preferredFormat: player.preferredFormat ?? defaultFormat,
+            age: player.age,
+            level: player.level,
+            registered: true
+        })));
         setCourtFormats([defaultFormat]);
         setNewPlayer((current) => ({ ...current, preferredFormat: defaultFormat }));
         setNewGuest((current) => ({ ...current, preferredFormat: defaultFormat }));
@@ -1798,6 +1825,21 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         <span className={`organiser-status status-${statusOf(selectedSession)}`}>{statusOf(selectedSession)}</span>
                     </div>
                     <p className="organiser-detail-line"><strong>Players:</strong> {selectedSession.players.length} · <strong>Matches:</strong> {selectedSession.matches.length}</p>
+                    {selectedSession.players.length > 0 && (
+                        <section className="organiser-subcard">
+                            <h3>Session roster ({selectedSession.players.length})</h3>
+                            <div className="organiser-roster">
+                                {selectedSession.players.map((player) => (
+                                    <div className="organiser-roster-row" key={`${player.username}-${player.joinedAt ?? ''}`}>
+                                        <span>
+                                            <strong>{player.username}</strong>
+                                            <small>{player.isGuest ? 'Guest sign-up' : 'Account sign-up'} · {player.preferredFormat ?? selectedClub?.defaultFormat ?? 'singles'}</small>
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
                     {statusOf(selectedSession) === 'scheduled' && (
                         <div className="organiser-actions">
                             <button className="organiser-button secondary" type="button" disabled={busy} onClick={() => void generateSessionQr()}>
@@ -1838,7 +1880,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                                 return (
                                     <div className="organiser-player-option" key={account.username}>
                                         <label>
-                                            <input type="checkbox" checked={Boolean(selection)} onChange={() => toggleAccount(account, selectedClub?.defaultFormat ?? 'singles')} />
+                                            <input type="checkbox" checked={Boolean(selection)} disabled={selection?.registered} onChange={() => toggleAccount(account, selectedClub?.defaultFormat ?? 'singles')} />
                                             <span><strong>{account.username}</strong><small>Rating {account.rating}{account.level ? ` · ${account.level}` : ''}</small></span>
                                         </label>
                                         {selection && !fixedClubFormat && (
@@ -1883,14 +1925,14 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
                     <section className="organiser-subcard">
                         <div className="organiser-section-heading">
-                            <div><h3>Session roster ({selectedPlayers.length})</h3><p>Each player is assigned only to courts matching their preference.</p></div>
+                            <div><h3>Session roster ({selectedPlayers.length})</h3><p>Existing session sign-ups are included automatically. Players are assigned only to courts matching their preference.</p></div>
                         </div>
                         {selectedPlayers.length ? (
                             <div className="organiser-roster">
                                 {selectedPlayers.map((player) => (
                                     <div className="organiser-roster-row" key={player.username}>
                                         <span><strong>{player.username}</strong><small>{player.kind === 'guest' ? 'Guest' : 'Account'} · {player.preferredFormat}</small></span>
-                                        <button className="organiser-text-button" type="button" onClick={() => setSelectedPlayers((current) => current.filter((item) => item.username !== player.username))}>Remove</button>
+                                        {!player.registered && <button className="organiser-text-button" type="button" onClick={() => setSelectedPlayers((current) => current.filter((item) => item.username !== player.username))}>Remove</button>}
                                     </div>
                                 ))}
                             </div>

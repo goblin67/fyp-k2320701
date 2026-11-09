@@ -811,7 +811,11 @@ router.post('/sessions/:id/start', async (req, res) => {
             players?: unknown;
             courtFormats?: unknown;
         };
-        if (!Array.isArray(players) || players.length === 0) {
+        if (!Array.isArray(players)) {
+            res.status(400).json({ error: 'Player selections are invalid' });
+            return;
+        }
+        if (players.length === 0 && session.players.length === 0) {
             res.status(400).json({ error: 'Select at least one player' });
             return;
         }
@@ -824,6 +828,29 @@ router.post('/sessions/:id/start', async (req, res) => {
             res.status(400).json({ error: `This club only allows ${fixedFormat} courts` });
             return;
         }
+
+        const existingNames = new Set<string>();
+        const existingPlayers: SessionPlayer[] = [];
+        session.players.forEach((player) => {
+            const key = player.username.toLowerCase();
+            if (existingNames.has(key)) return;
+            existingNames.add(key);
+            existingPlayers.push({
+                username: player.username,
+                isGuest: player.isGuest,
+                preferredFormat: fixedFormat ?? (
+                    player.preferredFormat && allowedFormats.includes(player.preferredFormat)
+                        ? player.preferredFormat
+                        : defaultFormat
+                ),
+                age: player.age,
+                level: player.level,
+                rating: player.rating,
+                rd: player.rd,
+                vol: player.vol,
+                joinedAt: player.joinedAt
+            });
+        });
 
         const seenNames = new Set<string>();
         const sessionPlayers: SessionPlayer[] = [];
@@ -855,6 +882,7 @@ router.post('/sessions/:id/start', async (req, res) => {
                 return;
             }
             seenNames.add(username.toLowerCase());
+            if (existingNames.has(username.toLowerCase())) continue;
 
             const user = player.kind === 'account' ? await User.findOne({ username, isDeleted: { $ne: true } }) : null;
             if (player.kind === 'account' && !user) {
@@ -895,7 +923,7 @@ router.post('/sessions/:id/start', async (req, res) => {
             });
         }
 
-        session.players = sessionPlayers;
+        session.players = [...existingPlayers, ...sessionPlayers];
         session.courtFormats = courtFormats;
         session.numCourts = courtFormats.length;
         session.isDoubles = courtFormats.every((format) => format === 'doubles');
