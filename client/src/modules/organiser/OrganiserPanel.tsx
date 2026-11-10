@@ -78,6 +78,7 @@ interface PlayerSelection {
     age?: number;
     level?: string;
     registered?: boolean;
+    formatEdited?: boolean;
 }
 
 interface OrganiserPanelProps {
@@ -636,7 +637,13 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
                         const playersByName = new Map(current.map((player) => [player.username.toLowerCase(), player]));
                         latestSession.players.forEach((player) => {
                             const key = player.username.toLowerCase();
-                            if (!playersByName.has(key)) {
+                            const existingSelection = playersByName.get(key);
+                            if (existingSelection?.registered && !existingSelection.formatEdited) {
+                                playersByName.set(key, {
+                                    ...existingSelection,
+                                    preferredFormat: player.preferredFormat ?? selectedClub?.defaultFormat ?? 'singles'
+                                });
+                            } else if (!existingSelection) {
                                 playersByName.set(key, {
                                     username: player.username,
                                     kind: player.isGuest ? 'guest' : 'account',
@@ -813,6 +820,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
     const saveClubFormatSettings = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!selectedClubId) return;
+        const previousDefaultFormat = selectedClub?.defaultFormat ?? 'singles';
         setBusy(true);
         setError('');
         setNotice('');
@@ -835,7 +843,9 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
             setCourtFormats((current) => current.map((format) =>
                 settings.allowedFormats.includes(format) ? format : settings.defaultFormat
             ));
-            setNotice('Club session format settings saved.');
+            setNotice(previousDefaultFormat === settings.defaultFormat
+                ? 'Club session format settings saved.'
+                : `Club settings saved. Scheduled sign-ups using ${previousDefaultFormat} were updated to ${settings.defaultFormat}.`);
         } catch (requestError) {
             setError(getErrorMessage(requestError));
         } finally {
@@ -985,7 +995,7 @@ const OrganiserPanel = ({ onLogout, onBackToDashboard }: OrganiserPanelProps) =>
 
     const updatePlayerPreference = (username: string, preferredFormat: Format) => {
         setSelectedPlayers((current) => current.map((player) =>
-            player.username === username ? { ...player, preferredFormat } : player
+            player.username === username ? { ...player, preferredFormat, formatEdited: true } : player
         ));
     };
 

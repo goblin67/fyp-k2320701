@@ -238,6 +238,7 @@ router.patch('/clubs/:id/settings', async (req, res) => {
             res.status(400).json({ error: 'The default format must be one of the club’s allowed formats' });
             return;
         }
+        const previousDefaultFormat = club.defaultFormat ?? 'singles';
         const activeSessions = await Session.find({
             adminId: req.user.id,
             clubId: club._id,
@@ -248,6 +249,23 @@ router.patch('/clubs/:id/settings', async (req, res) => {
         )) {
             res.status(409).json({ error: 'Finish or update active sessions before removing a format used by one of their courts' });
             return;
+        }
+
+        if (previousDefaultFormat !== defaultFormat) {
+            await Session.updateMany(
+                {
+                    adminId: req.user.id,
+                    clubId: club._id,
+                    status: 'scheduled',
+                    'players.preferredFormat': previousDefaultFormat
+                },
+                {
+                    $set: { 'players.$[rosterPlayer].preferredFormat': defaultFormat }
+                },
+                {
+                    arrayFilters: [{ 'rosterPlayer.preferredFormat': previousDefaultFormat }]
+                }
+            );
         }
 
         club.allowedFormats = allowedFormats;
@@ -830,21 +848,40 @@ router.post('/sessions/:id/start', async (req, res) => {
         }
 
         const existingNames = new Set<string>();
+        const submittedPlayers = new Map<string, {
+            preferredFormat: PlayFormat;
+            age?: number;
+            level?: string;
+        }>();
+        for (const entry of players) {
+            if (typeof entry !== 'object' || entry === null) continue;
+            const player = entry as { username?: unknown; preferredFormat?: unknown; age?: unknown; level?: unknown };
+            const username = typeof player.username === 'string' ? player.username.trim() : '';
+            if (!username || !isFormat(player.preferredFormat)) continue;
+            submittedPlayers.set(username.toLowerCase(), {
+                preferredFormat: player.preferredFormat,
+                age: typeof player.age === 'number' ? player.age : undefined,
+                level: typeof player.level === 'string' ? player.level.trim() : undefined
+            });
+        }
         const existingPlayers: SessionPlayer[] = [];
         session.players.forEach((player) => {
             const key = player.username.toLowerCase();
             if (existingNames.has(key)) return;
             existingNames.add(key);
+            const submittedPlayer = submittedPlayers.get(key);
             existingPlayers.push({
                 username: player.username,
                 isGuest: player.isGuest,
                 preferredFormat: fixedFormat ?? (
-                    player.preferredFormat && allowedFormats.includes(player.preferredFormat)
-                        ? player.preferredFormat
-                        : defaultFormat
+                    submittedPlayer?.preferredFormat && allowedFormats.includes(submittedPlayer.preferredFormat)
+                        ? submittedPlayer.preferredFormat
+                        : player.preferredFormat && allowedFormats.includes(player.preferredFormat)
+                            ? player.preferredFormat
+                            : defaultFormat
                 ),
-                age: player.age,
-                level: player.level,
+                age: submittedPlayer?.age ?? player.age,
+                level: submittedPlayer?.level ?? player.level,
                 rating: player.rating,
                 rd: player.rd,
                 vol: player.vol,
